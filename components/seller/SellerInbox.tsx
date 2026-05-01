@@ -50,6 +50,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [sellerId, setSellerId] = useState<string | null>(null);
+  const [readComplaintIds, setReadComplaintIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let uid: string;
@@ -58,7 +59,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
       if (!user) { setLoading(false); return; }
       uid = user.id;
       setSellerId(uid);
-      await Promise.all([fetchComplaints(uid), fetchMessages(uid)]);
+      await Promise.all([fetchComplaints(uid), fetchMessages(uid), fetchComplaintReads(uid)]);
       setLoading(false);
     };
     init();
@@ -77,6 +78,25 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
+  const fetchComplaintReads = async (uid: string) => {
+    const { data } = await supabase
+      .from('message_reads')
+      .select('message_id')
+      .eq('user_id', uid)
+      .like('message_id', 'complaint-%');
+    const ids = new Set((data || []).map((r: any) => (r.message_id as string).replace('complaint-', '')));
+    setReadComplaintIds(ids);
+  };
+
+  const markComplaintRead = async (complaintId: string, uid: string) => {
+    if (readComplaintIds.has(complaintId)) return;
+    await supabase.from('message_reads').upsert(
+      { message_id: `complaint-${complaintId}`, user_id: uid },
+      { onConflict: 'message_id,user_id' }
+    );
+    setReadComplaintIds(prev => new Set([...prev, complaintId]));
+  };
 
   const fetchComplaints = async (uid: string) => {
     const { data } = await supabase
@@ -170,7 +190,8 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
   };
 
   const unreadMessages = messages.filter(m => !m.read).length;
-  const openComplaints = complaints.filter(c => c.status === 'open').length;
+  // Only count open complaints the seller hasn't read yet
+  const openComplaints = complaints.filter(c => c.status === 'open' && !readComplaintIds.has(c.id)).length;
 
   if (loading) {
     return (
@@ -230,11 +251,17 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
                 <Card key={complaint.id} className="overflow-hidden">
                   <button
                     className="w-full text-left px-5 py-4 flex items-start justify-between gap-4 hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpandedId(isOpen ? null : complaint.id)}
+                    onClick={() => {
+                      setExpandedId(isOpen ? null : complaint.id);
+                      if (!isOpen && sellerId) markComplaintRead(complaint.id, sellerId);
+                    }}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-gray-900 text-sm">{complaint.subject}</span>
+                        {!readComplaintIds.has(complaint.id) && complaint.status === 'open' && (
+                          <span className="size-2 rounded-full bg-red-500 shrink-0" />
+                        )}
+                        <span className={`text-sm ${!readComplaintIds.has(complaint.id) && complaint.status === 'open' ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>{complaint.subject}</span>
                         <Badge
                           variant="outline"
                           className={complaint.status === 'open'

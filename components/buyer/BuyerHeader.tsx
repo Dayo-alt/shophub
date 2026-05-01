@@ -51,8 +51,8 @@ export function BuyerHeader({ user, cartItemCount, onNavigatePath, currentPath, 
     // Subscribe to new messages
     const channel = supabase
       .channel('buyer-messages-count')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, fetchUnread)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reads' }, fetchUnread)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchUnread)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reads' }, fetchUnread)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
