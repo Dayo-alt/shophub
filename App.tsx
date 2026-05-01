@@ -340,6 +340,9 @@ function App() {
   const startOtpChallenge = async (email: string, reason: OtpReason) => {
     if (!email) throw new Error('Missing email for OTP challenge');
     
+    console.log('🔵 startOtpChallenge START:', { email, reason });
+    console.log('📧 Calling supabase.auth.signInWithOtp...');
+    
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -347,7 +350,13 @@ function App() {
         emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
       },
     });
-    if (error) throw error;
+    
+    console.log('✅ signInWithOtp response:', { error });
+    if (error) {
+      console.error('❌ signInWithOtp error:', error);
+      throw error;
+    }
+    console.log('✅ OTP sent to:', email);
     setOtpChallenge({ email, reason });
     setCurrentView('otp');
   };
@@ -431,8 +440,11 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
+      console.log('🔵 handleSignup START:', { email, name, role });
+      
       // FIXED: Create account first with signUp, then request OTP
       // This ensures the account exists before signInWithOtp is called
+      console.log('📝 Calling supabase.auth.signUp...');
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -441,15 +453,25 @@ function App() {
         },
       });
       
-      if (error) throw error;
+      console.log('✅ signUp response:', { data, error });
+      if (error) {
+        console.error('❌ signUp error:', error);
+        throw error;
+      }
       if (!data.user) throw new Error('Failed to create account');
+      
+      console.log('✅ Account created:', data.user.id);
 
       // Store signup data for after OTP verification
       setPendingSignup({ password, name, role, country, phone });
+      console.log('💾 Pending signup stored');
       
       // NOW request OTP - account exists in Supabase Auth
+      console.log('📧 Requesting OTP for email:', email);
       await startOtpChallenge(email, 'signup');
+      console.log('✅ OTP challenge started');
     } catch (error: any) {
+      console.error('❌ handleSignup ERROR:', error);
       setPendingSignup(null);
       throw new Error(error.message || 'Failed to sign up');
     }
@@ -533,16 +555,26 @@ function App() {
   };
 
   const handleVerifyOtp = async (code: string) => {
+    console.log('🔵 handleVerifyOtp START:', { code });
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email } = otpChallenge;
+    
+    console.log('🔐 Verifying OTP code for email:', email);
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token: code,
       type: 'email',
     });
-    if (error) throw error;
+    
+    console.log('✅ verifyOtp response:', { data, error });
+    if (error) {
+      console.error('❌ verifyOtp error:', error);
+      throw error;
+    }
     const session = data.session;
     if (!session?.user) throw new Error('Invalid or expired code');
+    
+    console.log('✅ OTP verified! Session:', session.user.id);
 
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(GOOGLE_OTP_FLAG);
@@ -550,8 +582,11 @@ function App() {
 
     // If this was a signup, complete account setup now that email is verified
     if (pendingSignup) {
+      console.log('💾 Completing signup for pending user...');
       const { password, name, role, country, phone } = pendingSignup;
+      console.log('🔐 Updating password...');
       await supabase.auth.updateUser({ password });
+      console.log('📝 Creating profile...');
       await supabase.from('profiles').insert({
         id: session.user.id,
         email,
@@ -560,6 +595,7 @@ function App() {
         country: country || null,
         phone: phone || null,
       });
+      console.log('✅ Profile created successfully');
       setPendingSignup(null);
     }
 
@@ -575,9 +611,12 @@ function App() {
   };
 
   const handleResendOtp = async () => {
+    console.log('🔵 handleResendOtp called');
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
+    console.log('📧 Resending OTP to:', email);
     await startOtpChallenge(email, reason);
+    console.log('✅ Resend complete');
   };
 
   const handleCancelOtp = async () => {
