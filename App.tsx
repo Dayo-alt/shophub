@@ -476,7 +476,11 @@ function App() {
       setPendingSignup({ password, name, role, country, phone });
       console.log('💾 Pending signup stored');
       
-      // NOW request OTP - account exists in Supabase Auth
+      // IMPORTANT: Sign out before requesting OTP (matches login flow)
+      console.log('🚪 Signing out before OTP...');
+      await supabase.auth.signOut();
+      
+      // NOW request OTP - account exists and session is cleared
       console.log('📧 Requesting OTP for email:', email);
       await startOtpChallenge(email, 'signup');
       console.log('✅ OTP challenge started');
