@@ -297,6 +297,13 @@ function App() {
     email: string;
     reason: OtpReason;
   } | null>(null);
+  const [pendingSignup, setPendingSignup] = useState<{
+    password: string;
+    name: string;
+    role: 'buyer' | 'seller';
+    country?: string;
+    phone?: string;
+  } | null>(null);
 
   const { t } = useLanguage();
 
@@ -424,27 +431,12 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name, role } },
-      });
-      if (error) throw error;
-
-      const userId = data.user?.id;
-      if (userId) {
-        // Profile insert is best-effort — don't throw if it fails due to RLS
-        // (profile will be created on first login via fetchUserProfile)
-        await supabase
-          .from('profiles')
-          .insert({ id: userId, email, name, role, country: country || null, phone: phone || null });
-      }
-
-      // Sign out any auto-session from signUp, then send OTP via signInWithOtp
-      // (uses the Magic Link template which shows {{ .Token }} — same as sign-in)
-      await supabase.auth.signOut();
+      // Store signup data, send OTP first — exact same flow as sign-in
+      // Account is created after OTP verification to avoid rate-limit from double email
+      setPendingSignup({ password, name, role, country, phone });
       await startOtpChallenge(email, 'signup');
     } catch (error: any) {
+      setPendingSignup(null);
       throw new Error(error.message || 'Failed to sign up');
     }
   };
@@ -542,6 +534,21 @@ function App() {
       window.localStorage.removeItem(GOOGLE_OTP_FLAG);
     }
 
+    // If this was a signup, complete account setup now that email is verified
+    if (pendingSignup) {
+      const { password, name, role, country, phone } = pendingSignup;
+      await supabase.auth.updateUser({ password });
+      await supabase.from('profiles').insert({
+        id: session.user.id,
+        email,
+        name,
+        role,
+        country: country || null,
+        phone: phone || null,
+      });
+      setPendingSignup(null);
+    }
+
     const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
     if (loggedInUser) {
       try {
@@ -561,6 +568,7 @@ function App() {
 
   const handleCancelOtp = async () => {
     setOtpChallenge(null);
+    setPendingSignup(null);
     await supabase.auth.signOut();
     setCurrentView('login');
   };
