@@ -343,22 +343,32 @@ function App() {
     console.log('🔵 startOtpChallenge START:', { email, reason });
     console.log('📧 Calling supabase.auth.signInWithOtp...');
     
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-      },
-    });
-    
-    console.log('✅ signInWithOtp response:', { error });
-    if (error) {
-      console.error('❌ signInWithOtp error:', error);
-      throw error;
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
+      });
+      
+      console.log('✅ signInWithOtp response:', { error });
+      if (error) {
+        console.error('❌ signInWithOtp error details:', {
+          message: error.message,
+          status: (error as any).status,
+          code: (error as any).code,
+          fullError: error
+        });
+        throw new Error(`Failed to send OTP: ${error.message}`);
+      }
+      console.log('✅ OTP sent to:', email);
+      setOtpChallenge({ email, reason });
+      setCurrentView('otp');
+    } catch (err: any) {
+      console.error('❌ Critical error in startOtpChallenge:', err);
+      throw err;
     }
-    console.log('✅ OTP sent to:', email);
-    setOtpChallenge({ email, reason });
-    setCurrentView('otp');
   };
 
   const checkSession = async () => {
