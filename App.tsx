@@ -431,9 +431,23 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      // Store signup data, send OTP first — exact same flow as sign-in
-      // Account is created after OTP verification to avoid rate-limit from double email
+      // FIXED: Create account first with signUp, then request OTP
+      // This ensures the account exists before signInWithOtp is called
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
+      });
+      
+      if (error) throw error;
+      if (!data.user) throw new Error('Failed to create account');
+
+      // Store signup data for after OTP verification
       setPendingSignup({ password, name, role, country, phone });
+      
+      // NOW request OTP - account exists in Supabase Auth
       await startOtpChallenge(email, 'signup');
     } catch (error: any) {
       setPendingSignup(null);
