@@ -1229,6 +1229,116 @@ app.post('/admin/paystack-transfer', async (c) => {
   return runAdminTransfer(c, body);
 });
 
+// ── Order shipped email ───────────────────────────────────────────────────────
+async function sendOrderShippedEmail(buyerEmail: string, order: any, estimatedDelivery: string) {
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+  const BREVO_API_KEY  = Deno.env.get('BREVO_API_KEY');
+  const BREVO_FROM     = Deno.env.get('BREVO_FROM_EMAIL');
+
+  const deliveryLabel = estimatedDelivery
+    ? new Date(estimatedDelivery).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : 'Soon';
+  const orderId = (order.id || '').slice(-10).toUpperCase();
+  const shipping = order.shipping_info || {};
+
+  const itemsHtml = (order.items || []).map((item: any) =>
+    `<tr>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;">${item.productName || item.product_name}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:right;">₦${((item.price || 0) * item.quantity).toLocaleString('en-NG')}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:sans-serif;">
+<div style="max-width:600px;margin:32px auto;padding:0 16px;">
+  <div style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:28px 32px;">
+      <h1 style="margin:0;color:white;font-size:22px;font-weight:700;">🚚 Your Order is On Its Way!</h1>
+      <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Great news — your ShopHub order has been shipped.</p>
+    </div>
+    <div style="padding:28px 32px;">
+      <p style="color:#374151;font-size:15px;">Hi ${shipping.name || 'there'},</p>
+      <p style="color:#6b7280;font-size:14px;">Your order <strong>#${orderId}</strong> is packed and on its way to you!</p>
+
+      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:20px;margin:20px 0;text-align:center;">
+        <p style="margin:0;font-size:12px;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Estimated Delivery</p>
+        <p style="margin:8px 0 0;font-size:24px;font-weight:700;color:#5b21b6;">${deliveryLabel}</p>
+      </div>
+
+      ${order.tracking_number ? `<div style="background:#f8fafc;border-radius:8px;padding:12px 16px;margin-bottom:20px;">
+        <p style="margin:0;font-size:13px;color:#64748b;">Tracking Number: <strong style="color:#1e293b;font-family:monospace;">${order.tracking_number}</strong></p>
+      </div>` : ''}
+
+      <h3 style="font-size:15px;color:#111827;margin:20px 0 10px;">Items Shipped</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead><tr style="background:#f9fafb;">
+          <th style="padding:8px;text-align:left;color:#6b7280;font-weight:600;">Item</th>
+          <th style="padding:8px;text-align:center;color:#6b7280;font-weight:600;">Qty</th>
+          <th style="padding:8px;text-align:right;color:#6b7280;font-weight:600;">Price</th>
+        </tr></thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+
+      <div style="margin-top:20px;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+        <p style="margin:0;font-size:13px;color:#166534;">Shipping to: <strong>${shipping.name}</strong><br/>
+        ${shipping.address}, ${shipping.city}${shipping.zipCode ? ', ' + shipping.zipCode : ''}, ${shipping.country}</p>
+      </div>
+
+      <p style="margin:24px 0 0;color:#9ca3af;font-size:12px;text-align:center;">
+        Questions? Reply to this email or visit your ShopHub orders page. — ShopHub Team
+      </p>
+    </div>
+  </div>
+</div></body></html>`;
+
+  const subject = `🚚 Your order #${orderId} has been shipped — arriving ${deliveryLabel}`;
+
+  if (BREVO_API_KEY && BREVO_FROM) {
+    try {
+      await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: { name: 'ShopHub', email: BREVO_FROM }, to: [{ email: buyerEmail }], subject, htmlContent: html }),
+      });
+      return;
+    } catch (e) { console.log('Brevo shipped email error:', e); }
+  }
+  if (RESEND_API_KEY) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'ShopHub <orders@resend.dev>', to: [buyerEmail], subject, html }),
+      });
+    } catch (e) { console.log('Resend shipped email error:', e); }
+  }
+}
+
+app.post('/notify-shipped', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as any;
+  return runNotifyShipped(c, body);
+});
+
+async function runNotifyShipped(c: any, body?: any): Promise<Response> {
+  try {
+    const parsed = body ?? await c.req.json().catch(() => ({})) as any;
+    const { orderId, estimatedDelivery } = parsed;
+    if (!orderId) return c.json({ error: 'orderId required' }, 400);
+
+    const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).maybeSingle();
+    if (!order) return c.json({ error: 'Order not found' }, 404);
+
+    const buyerEmail = order.buyer_email;
+    if (!buyerEmail) return c.json({ error: 'No buyer email on order' }, 400);
+
+    await sendOrderShippedEmail(buyerEmail, order, estimatedDelivery || order.estimated_delivery || '');
+    return c.json({ ok: true });
+  } catch (e) {
+    console.log('notify-shipped error:', e);
+    return c.json({ error: 'Internal server error', detail: String(e) }, 500);
+  }
+}
+
 // ── Cart retention helpers ────────────────────────────────────────────────────
 
 async function sendCartReminderEmail(to: string, subject: string, html: string, fromName: string): Promise<{ ok: boolean; error?: string }> {
@@ -1488,6 +1598,7 @@ app.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   if (body?.action === 'cart-check') return runCartCheck(c, body);
   if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
+  if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
   return c.json({ ok: true, api: 'ShopHub server' });
 });
 
@@ -1497,6 +1608,7 @@ app.all('*', async (c) => {
     const body = await c.req.json().catch(() => ({})) as any;
     if (body?.action === 'cart-check') return runCartCheck(c, body);
     if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
+    if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
   }
   return c.json({ error: 'Not Found', path: c.req.path }, 404);
 });

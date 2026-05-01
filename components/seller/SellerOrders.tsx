@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Package, Loader2, TrendingUp, DollarSign, ShoppingBag, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Package, Loader2, TrendingUp, DollarSign, ShoppingBag, ChevronDown, ChevronUp, Clock, Truck, X } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { supabase } from '../../utils/supabase/client';
+import { projectId } from '../../utils/supabase/info';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
 
 interface SellerOrdersProps {
@@ -55,6 +57,7 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
   const [sellerId,        setSellerId]        = useState<string | null>(sellerIdProp || null);
+  const [deliveryModal,   setDeliveryModal]   = useState<{ orderId: string; date: string; buyerEmail: string } | null>(null);
   const { formatCurrency, t } = useLanguage();
 
   useEffect(() => {
@@ -113,8 +116,9 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
           price:       i.price,
           sellerId:    i.sellerId    || i.seller_id,
         })),
-        shippingInfo:   o.shipping_info || {},
-        sellerEarnings: o.seller_earnings || {},
+        shippingInfo:        o.shipping_info || {},
+        sellerEarnings:      o.seller_earnings || {},
+        estimatedDelivery:   o.estimated_delivery || null,
       }));
 
       setOrders(normalised);
@@ -126,9 +130,32 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
   };
 
   const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {
+    if (newStatus === 'shipped') {
+      const order = orders.find(o => o.id === orderId);
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 3);
+      setDeliveryModal({ orderId, date: defaultDate.toISOString().split('T')[0], buyerEmail: order?.buyerEmail || '' });
+      return;
+    }
+    await applyStatusUpdate(orderId, newStatus, null);
+  };
+
+  const handleConfirmShipped = async () => {
+    if (!deliveryModal) return;
+    const { orderId, date } = deliveryModal;
+    setDeliveryModal(null);
+    await applyStatusUpdate(orderId, 'shipped', date);
+    // Send shipped email
+    fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ action: 'notify-shipped', orderId, estimatedDelivery: date }),
+    }).catch(() => {});
+  };
+
+  const applyStatusUpdate = async (orderId: string, newStatus: OrderStatus, estimatedDelivery: string | null) => {
     setUpdatingOrderId(orderId);
     try {
-      // Fetch current status_history first
       const { data: current } = await supabase
         .from('orders')
         .select('status_history')
@@ -142,14 +169,14 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
         note:      t(STATUS_NOTE_KEYS[newStatus]),
       });
 
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus, status_history: history })
-        .eq('id', orderId);
+      const updates: any = { status: newStatus, status_history: history };
+      if (estimatedDelivery) updates.estimated_delivery = new Date(estimatedDelivery).toISOString();
+
+      const { error } = await supabase.from('orders').update(updates).eq('id', orderId);
 
       if (!error) {
         setOrders(prev => prev.map(o =>
-          o.id === orderId ? { ...o, status: newStatus, statusHistory: history } : o
+          o.id === orderId ? { ...o, status: newStatus, statusHistory: history, estimatedDelivery } : o
         ));
       }
     } catch (error) {
@@ -195,6 +222,48 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in-up">
+
+      {/* ── Delivery date modal (shown when marking as Shipped) ── */}
+      {deliveryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 animate-scale-in">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Truck className="size-5 text-purple-600" />
+                <h3 className="font-semibold text-gray-900">Set Delivery Date</h3>
+              </div>
+              <button onClick={() => setDeliveryModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="size-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Enter the estimated delivery date for this order. The buyer will be notified by email.
+            </p>
+            <div className="mb-5">
+              <label className="text-xs font-medium text-gray-700 block mb-1.5">Estimated Delivery Date</label>
+              <input
+                type="date"
+                value={deliveryModal.date}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => setDeliveryModal(m => m ? { ...m, date: e.target.value } : null)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+              />
+              {deliveryModal.date && (
+                <p className="text-xs text-purple-600 mt-1.5">
+                  Delivery: {new Date(deliveryModal.date + 'T12:00:00').toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDeliveryModal(null)} className="flex-1">Cancel</Button>
+              <Button onClick={handleConfirmShipped} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white">
+                Mark as Shipped
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-gray-900 mb-1">Customer Orders</h1>
         <p className="text-gray-600 text-sm">Manage and fulfill customer orders</p>
@@ -252,6 +321,11 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
                   {order.trackingNumber && (
                     <p className="text-xs text-blue-600 font-mono mt-1">
                       Tracking: <span className="font-semibold">{order.trackingNumber}</span>
+                    </p>
+                  )}
+                  {order.estimatedDelivery && (
+                    <p className="text-xs text-purple-600 mt-1">
+                      Est. delivery: <span className="font-semibold">{new Date(order.estimatedDelivery).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     </p>
                   )}
                 </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Package, Truck, AlertCircle, X, Send,
-  ShoppingBag, Settings, MapPin, Home, ChevronDown, ChevronUp,
+  ShoppingBag, Settings, MapPin, Home, ChevronDown, ChevronUp, Calendar,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
@@ -50,6 +50,9 @@ function getStepIndex(status: string): number {
 function StatusTracker({ order, t }: { order: Order; t: (key: string) => string }) {
   const currentStep = getStepIndex(order.status);
   const estimatedDelivery = (() => {
+    if (order.estimatedDelivery) {
+      return new Date(order.estimatedDelivery).toLocaleDateString('en-NG', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
     const d = new Date(order.createdAt);
     d.setDate(d.getDate() + 5);
     return d.toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -179,8 +182,9 @@ export function BuyerOrders({ accessToken, refreshTrigger, onBack }: BuyerOrders
         paymentMethod:    o.payment_method,
         shippingInfo:     o.shipping_info || {},
         sellerEarnings:   o.seller_earnings || {},
-        createdAt:        o.created_at,
-        trackingNumber:   o.tracking_number || null,
+        createdAt:          o.created_at,
+        trackingNumber:     o.tracking_number || null,
+        estimatedDelivery:  o.estimated_delivery || null,
       }));
 
       setOrders(mapped);
@@ -431,6 +435,19 @@ export function BuyerOrders({ accessToken, refreshTrigger, onBack }: BuyerOrders
               {/* ── Expanded detail ── */}
               {isExpanded && (
                 <div className="border-t border-gray-100 px-5 pb-5">
+                  {/* Shipped delivery date banner */}
+                  {order.estimatedDelivery && order.status === 'shipped' && (
+                    <div className="mt-4 flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-4 py-3">
+                      <Truck className="size-4 text-purple-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-purple-800">Your order is on its way!</p>
+                        <p className="text-xs text-purple-600">
+                          Expected delivery: <span className="font-bold">{new Date(order.estimatedDelivery).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Visual status tracker */}
                   <StatusTracker order={order} t={t} />
 

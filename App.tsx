@@ -272,6 +272,9 @@ export interface Order {
   paymentStatus?: string;
   paymentIntentId?: string;
   trackingNumber?: string;
+  paymentReference?: string;
+  paymentMethod?: string;
+  estimatedDelivery?: string | null;
 }
 
 type View = 'home' | 'about' | 'login' | 'signup' | 'otp' | 'dashboard' | 'adminLogin' | 'admin';
