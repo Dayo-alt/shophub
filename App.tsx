@@ -443,16 +443,18 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Create the account
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { name, role } },
       });
-      if (error) throw error;
-      if (!data.user) throw new Error('Failed to create account');
+      if (signUpError) throw signUpError;
+      if (!signUpData.user) throw new Error('Failed to create account');
 
+      // Insert profile (best-effort)
       await supabase.from('profiles').insert({
-        id: data.user.id,
+        id: signUpData.user.id,
         email,
         name,
         role,
@@ -460,8 +462,14 @@ function App() {
         phone: phone || null,
       });
 
-      // Auto-login — no OTP for signup, go straight to dashboard
-      await fetchUserProfile(data.user.id, data.session?.access_token ?? null);
+      // Sign in with password to get a guaranteed valid session
+      // (signUp session can be null when email already exists)
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      if (!signInData.session) throw new Error('Failed to start session');
+
+      // Go straight to dashboard — no OTP for signup
+      await fetchUserProfile(signInData.user.id, signInData.session.access_token);
     } catch (error: any) {
       throw new Error(error.message || 'Failed to sign up');
     }
