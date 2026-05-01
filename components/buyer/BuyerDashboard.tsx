@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { User, Product } from '../../App';
 import { supabase } from '../../utils/supabase/client';
+import { toast } from 'sonner';
 import { BuyerHeader } from './BuyerHeader';
 import { ProductsView } from './ProductsView';
 import { BuyerCart } from './BuyerCart';
@@ -278,12 +279,20 @@ export function BuyerDashboard({ user, accessToken, onLogout }: BuyerDashboardPr
     setCart(prevCart => {
       const existingItem = prevCart.find(item => item.product.id === product.id);
       if (existingItem) {
+        toast.success(`Updated: ${product.name}`, {
+          description: `Quantity increased to ${existingItem.quantity + quantity}`,
+          duration: 3000,
+        });
         return prevCart.map(item =>
           item.product.id === product.id
             ? { ...item, quantity: item.quantity + quantity }
             : item
         );
       }
+      toast.success(`Added to cart!`, {
+        description: product.name,
+        duration: 3000,
+      });
       return [...prevCart, { product, quantity }];
     });
 

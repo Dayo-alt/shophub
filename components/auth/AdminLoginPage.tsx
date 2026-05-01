@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Store, Lock, LogIn } from 'lucide-react';
+import { Store, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -16,6 +16,7 @@ export function AdminLoginPage({ onEmailLogin, onGoogleLogin }: AdminLoginPagePr
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { t } = useLanguage();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,16 +64,26 @@ export function AdminLoginPage({ onEmailLogin, onGoogleLogin }: AdminLoginPagePr
             <Label htmlFor="admin-password" className="text-xs font-medium text-slate-700">
               {t('adminPasswordLabel')}
             </Label>
-            <Input
-              id="admin-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder={t('adminPasswordPlaceholder')}
-              className="h-10 text-sm"
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <Input
+                id="admin-password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder={t('adminPasswordPlaceholder')}
+                className="h-10 text-sm pr-10"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
 
           {error && (

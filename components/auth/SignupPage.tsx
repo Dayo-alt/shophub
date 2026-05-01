@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Store, UserPlus, ChevronDown, Search } from 'lucide-react';
+import { Store, UserPlus, ChevronDown, Search, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -20,8 +20,9 @@ export function SignupPage({ onSignup, onSwitchToLogin, onGoogleLogin }: SignupP
   const [role,     setRole]     = useState<'buyer' | 'seller'>('buyer');
   const [country,  setCountry]  = useState('');
   const [phone,    setPhone]    = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Country dropdown state
   const [countryOpen,   setCountryOpen]   = useState(false);
@@ -123,16 +124,26 @@ export function SignupPage({ onSignup, onSwitchToLogin, onGoogleLogin }: SignupP
 
           <div className="space-y-2">
             <Label htmlFor="password" className="text-sm text-slate-600">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Create a password"
-              className="h-11"
-              minLength={6}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Create a password"
+                className="h-11 pr-11"
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Country selector */}
