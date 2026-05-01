@@ -297,13 +297,6 @@ function App() {
     email: string;
     reason: OtpReason;
   } | null>(null);
-  const [pendingSignup, setPendingSignup] = useState<{
-    password: string;
-    name: string;
-    role: 'buyer' | 'seller';
-    country?: string;
-    phone?: string;
-  } | null>(null);
 
   const { t } = useLanguage();
 
@@ -450,8 +443,6 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      // Create account first so signInWithOtp sees an existing user
-      // and uses the Magic Link template (which has the code), not Confirm Signup (link only)
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -460,11 +451,18 @@ function App() {
       if (error) throw error;
       if (!data.user) throw new Error('Failed to create account');
 
-      setPendingSignup({ password, name, role, country, phone });
-      await supabase.auth.signOut();
-      await startOtpChallenge(email, 'signup');
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        email,
+        name,
+        role,
+        country: country || null,
+        phone: phone || null,
+      });
+
+      // Auto-login — no OTP for signup, go straight to dashboard
+      await fetchUserProfile(data.user.id, data.session?.access_token ?? null);
     } catch (error: any) {
-      setPendingSignup(null);
       throw new Error(error.message || 'Failed to sign up');
     }
   };
@@ -562,20 +560,6 @@ function App() {
       window.localStorage.removeItem(GOOGLE_OTP_FLAG);
     }
 
-    // Complete profile creation for new signups after OTP is verified
-    if (pendingSignup) {
-      const { name, role, country, phone } = pendingSignup;
-      await supabase.from('profiles').insert({
-        id: session.user.id,
-        email,
-        name,
-        role,
-        country: country || null,
-        phone: phone || null,
-      });
-      setPendingSignup(null);
-    }
-
     const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
     if (loggedInUser) {
       try {
@@ -595,7 +579,6 @@ function App() {
 
   const handleCancelOtp = async () => {
     setOtpChallenge(null);
-    setPendingSignup(null);
     await supabase.auth.signOut();
     setCurrentView('login');
   };
