@@ -318,6 +318,46 @@ app.delete('/products/:id', async (c) => {
   }
 });
 
+// ── Shared email sender: Brevo first, Resend fallback ────────────────────────
+async function sendEmailShopHub(to: string, subject: string, html: string, fromName = 'ShopHub'): Promise<void> {
+  const BREVO_KEY  = Deno.env.get('BREVO_API_KEY');
+  const BREVO_FROM = Deno.env.get('BREVO_FROM_EMAIL');
+  const RESEND_KEY = Deno.env.get('RESEND_API_KEY');
+
+  if (BREVO_KEY && BREVO_FROM) {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': BREVO_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender: { name: fromName, email: BREVO_FROM },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+        }),
+      });
+      if (res.ok) { console.log(`Email sent via Brevo to ${to}`); return; }
+      const err = await res.text().catch(() => '');
+      console.log(`Brevo failed (${res.status}): ${err.slice(0, 200)}`);
+    } catch (e) { console.log('Brevo error:', e); }
+  }
+
+  if (RESEND_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: `${fromName} <onboarding@resend.dev>`, to: [to], subject, html }),
+      });
+      if (res.ok) { console.log(`Email sent via Resend to ${to}`); return; }
+      const err = await res.text().catch(() => '');
+      console.log(`Resend failed (${res.status}): ${err.slice(0, 200)}`);
+    } catch (e) { console.log('Resend error:', e); }
+  }
+
+  console.log(`No email provider available — could not send to ${to}`);
+}
+
 // ── Email helper ─────────────────────────────────────────────────────────────
 async function sendSellerOrderEmail(
   sellerEmail: string,
@@ -326,8 +366,6 @@ async function sendSellerOrderEmail(
   sellerItems: any[],
   sellerEarnings: number,
 ) {
-  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  if (!RESEND_API_KEY) return; // gracefully skip if not configured
 
   const itemsHtml = sellerItems
     .map(
@@ -400,29 +438,16 @@ async function sendSellerOrderEmail(
 </div>
 </body></html>`;
 
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'ShopHub Orders <orders@resend.dev>',
-        to: [sellerEmail],
-        subject: `New order #${order.id.slice(-8)} — You earned ₦${sellerEarnings.toLocaleString('en-NG')}`,
-        html,
-      }),
-    });
-  } catch (e) {
-    console.log('Seller email send error:', e);
-  }
+  await sendEmailShopHub(
+    sellerEmail,
+    `New order #${order.id.slice(-8)} — You earned ₦${sellerEarnings.toLocaleString('en-NG')}`,
+    html,
+    'ShopHub Orders',
+  );
 }
 
 // ── Buyer confirmation email ──────────────────────────────────────────────────
 async function sendBuyerConfirmationEmail(buyerEmail: string, order: any) {
-  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  if (!RESEND_API_KEY) return;
 
   const itemsHtml = (order.items || [])
     .map((item: any) => `
@@ -479,43 +504,31 @@ async function sendBuyerConfirmationEmail(buyerEmail: string, order: any) {
   </div>
 </div></body></html>`;
 
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'ShopHub <orders@resend.dev>',
-        to: [buyerEmail],
-        subject: `✅ Order Confirmed — #${orderId}`,
-        html,
-      }),
-    });
-  } catch (e) {
-    console.log('Buyer email error:', e);
-  }
+  await sendEmailShopHub(buyerEmail, `✅ Order Confirmed — #${orderId}`, html, 'ShopHub');
 }
 
 // ── Notify order (buyer confirmation + seller notifications) ──────────────────
-app.post('/notify-order', async (c) => {
+async function runNotifyOrder(c: any, body?: any): Promise<Response> {
   try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) return c.json({ error: 'Unauthorized' }, 401);
-
-    const { orderId } = await c.req.json();
+    const parsed = body ?? await c.req.json().catch(() => ({})) as any;
+    const { orderId } = parsed;
     if (!orderId) return c.json({ error: 'orderId required' }, 400);
 
-    // Fetch order from Supabase
     const { data: order, error: oErr } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .maybeSingle();
-
+      .from('orders').select('*').eq('id', orderId).maybeSingle();
     if (oErr || !order) return c.json({ error: 'Order not found' }, 404);
 
+    // Always use the buyer's registered email from profiles (not checkout form email)
+    let buyerEmail = order.buyer_email;
+    if (order.buyer_id) {
+      const { data: buyerProfile } = await supabase
+        .from('profiles').select('email, name').eq('id', order.buyer_id).maybeSingle();
+      if (buyerProfile?.email) buyerEmail = buyerProfile.email;
+    }
+
     // Send buyer confirmation
-    if (order.buyer_email) {
-      await sendBuyerConfirmationEmail(order.buyer_email, {
+    if (buyerEmail) {
+      await sendBuyerConfirmationEmail(buyerEmail, {
         ...order,
         shippingInfo: order.shipping_info,
       });
@@ -523,22 +536,14 @@ app.post('/notify-order', async (c) => {
 
     // Send seller notifications
     const sellerEarnings: Record<string, number> = order.seller_earnings || {};
-    const sellerIds = Object.keys(sellerEarnings);
-
-    for (const sellerId of sellerIds) {
+    for (const sellerId of Object.keys(sellerEarnings)) {
       try {
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('email, name')
-          .eq('id', sellerId)
-          .maybeSingle();
-
+          .from('profiles').select('email, name').eq('id', sellerId).maybeSingle();
         if (!profile?.email) continue;
-
         const sellerItems = (order.items || []).filter((i: any) =>
           (i.sellerId || i.seller_id) === sellerId
         );
-
         await sendSellerOrderEmail(
           profile.email,
           profile.name || 'Seller',
@@ -546,9 +551,7 @@ app.post('/notify-order', async (c) => {
           sellerItems,
           sellerEarnings[sellerId] || 0,
         );
-      } catch (e) {
-        console.log('Seller notify error:', e);
-      }
+      } catch (e) { console.log('Seller notify error:', e); }
     }
 
     return c.json({ ok: true });
@@ -556,7 +559,9 @@ app.post('/notify-order', async (c) => {
     console.log('notify-order error:', e);
     return c.json({ error: 'Failed to send notifications' }, 500);
   }
-});
+}
+
+app.post('/notify-order', async (c) => runNotifyOrder(c));
 
 // ── Complaint notification (buyer → seller + admin) ───────────────────────────
 app.post('/complaint-notify', async (c) => {
@@ -564,9 +569,7 @@ app.post('/complaint-notify', async (c) => {
     const { complaintId } = await c.req.json();
     if (!complaintId) return c.json({ error: 'complaintId required' }, 400);
 
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    const ADMIN_EMAIL    = Deno.env.get('ADMIN_EMAIL') || 'admin@shophub.com';
-    if (!RESEND_API_KEY) return c.json({ ok: true }); // non-fatal
+    const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') || 'admin@shophub.com';
 
     const { data: complaint } = await supabase
       .from('complaints')
@@ -577,11 +580,7 @@ app.post('/complaint-notify', async (c) => {
     if (!complaint) return c.json({ error: 'Complaint not found' }, 404);
 
     const sendEmail = async (to: string, subject: string, bodyHtml: string) => {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'ShopHub <orders@resend.dev>', to: [to], subject, html: bodyHtml }),
-      }).catch(() => {});
+      await sendEmailShopHub(to, subject, bodyHtml, 'ShopHub Support').catch(() => {});
     };
 
     const htmlBody = (recipient: string) => `
@@ -1231,10 +1230,6 @@ app.post('/admin/paystack-transfer', async (c) => {
 
 // ── Order shipped email ───────────────────────────────────────────────────────
 async function sendOrderShippedEmail(buyerEmail: string, order: any, estimatedDelivery: string) {
-  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const BREVO_API_KEY  = Deno.env.get('BREVO_API_KEY');
-  const BREVO_FROM     = Deno.env.get('BREVO_FROM_EMAIL');
-
   const deliveryLabel = estimatedDelivery
     ? new Date(estimatedDelivery).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : 'Soon';
@@ -1292,26 +1287,7 @@ async function sendOrderShippedEmail(buyerEmail: string, order: any, estimatedDe
 </div></body></html>`;
 
   const subject = `🚚 Your order #${orderId} has been shipped — arriving ${deliveryLabel}`;
-
-  if (BREVO_API_KEY && BREVO_FROM) {
-    try {
-      await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: { name: 'ShopHub', email: BREVO_FROM }, to: [{ email: buyerEmail }], subject, htmlContent: html }),
-      });
-      return;
-    } catch (e) { console.log('Brevo shipped email error:', e); }
-  }
-  if (RESEND_API_KEY) {
-    try {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'ShopHub <orders@resend.dev>', to: [buyerEmail], subject, html }),
-      });
-    } catch (e) { console.log('Resend shipped email error:', e); }
-  }
+  await sendEmailShopHub(buyerEmail, subject, html, 'ShopHub');
 }
 
 app.post('/notify-shipped', async (c) => {
@@ -1328,7 +1304,13 @@ async function runNotifyShipped(c: any, body?: any): Promise<Response> {
     const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).maybeSingle();
     if (!order) return c.json({ error: 'Order not found' }, 404);
 
-    const buyerEmail = order.buyer_email;
+    // Use registered email from profiles, not checkout form email
+    let buyerEmail = order.buyer_email;
+    if (order.buyer_id) {
+      const { data: buyerProfile } = await supabase
+        .from('profiles').select('email').eq('id', order.buyer_id).maybeSingle();
+      if (buyerProfile?.email) buyerEmail = buyerProfile.email;
+    }
     if (!buyerEmail) return c.json({ error: 'No buyer email on order' }, 400);
 
     await sendOrderShippedEmail(buyerEmail, order, estimatedDelivery || order.estimated_delivery || '');
@@ -1599,6 +1581,7 @@ app.post('/', async (c) => {
   if (body?.action === 'cart-check') return runCartCheck(c, body);
   if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
   if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
+  if (body?.action === 'notify-order') return runNotifyOrder(c, body);
   return c.json({ ok: true, api: 'ShopHub server' });
 });
 
@@ -1609,6 +1592,7 @@ app.all('*', async (c) => {
     if (body?.action === 'cart-check') return runCartCheck(c, body);
     if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
     if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
+    if (body?.action === 'notify-order') return runNotifyOrder(c, body);
   }
   return c.json({ error: 'Not Found', path: c.req.path }, 404);
 });

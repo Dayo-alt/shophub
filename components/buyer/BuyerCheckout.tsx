@@ -114,13 +114,13 @@ export function BuyerCheckout({ cart, user, accessToken, onBack, onOrderComplete
       if (error) throw new Error(error.message);
 
       // Fire-and-forget: send buyer confirmation + seller notification emails
-      fetch(`https://${projectId}.supabase.co/functions/v1/server/notify-order`, {
+      fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ action: 'notify-order', orderId }),
       }).catch(() => { /* non-fatal */ });
 
       localStorage.removeItem('cart');
