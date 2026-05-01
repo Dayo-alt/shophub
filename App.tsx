@@ -440,11 +440,10 @@ function App() {
           .insert({ id: userId, email, name, role, country: country || null, phone: phone || null });
       }
 
-      // signUp already sent the confirmation OTP email — don't call signInWithOtp
-      // which would trigger a second email and hit Supabase rate limits (429)
+      // Sign out any auto-session from signUp, then send OTP via signInWithOtp
+      // (uses the Magic Link template which shows {{ .Token }} — same as sign-in)
       await supabase.auth.signOut();
-      setOtpChallenge({ email, reason: 'signup' });
-      setCurrentView('otp');
+      await startOtpChallenge(email, 'signup');
     } catch (error: any) {
       throw new Error(error.message || 'Failed to sign up');
     }
@@ -529,12 +528,11 @@ function App() {
 
   const handleVerifyOtp = async (code: string) => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
-    const { email, reason } = otpChallenge;
-    // signup OTPs use type 'signup'; login/magic-link OTPs use type 'email'
+    const { email } = otpChallenge;
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token: code,
-      type: reason === 'signup' ? 'signup' : 'email',
+      type: 'email',
     });
     if (error) throw error;
     const session = data.session;
@@ -558,13 +556,7 @@ function App() {
   const handleResendOtp = async () => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
-    if (reason === 'signup') {
-      // Resend the signup confirmation OTP (not a new signInWithOtp)
-      const { error } = await supabase.auth.resend({ type: 'signup', email });
-      if (error) throw error;
-    } else {
-      await startOtpChallenge(email, reason);
-    }
+    await startOtpChallenge(email, reason);
   };
 
   const handleCancelOtp = async () => {
