@@ -332,36 +332,16 @@ function App() {
 
   const startOtpChallenge = async (email: string, reason: OtpReason) => {
     if (!email) throw new Error('Missing email for OTP challenge');
-    
-    console.log('🔵 startOtpChallenge START:', { email, reason });
-    console.log('📧 Calling supabase.auth.signInWithOtp...');
-    
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
-      });
-      
-      console.log('✅ signInWithOtp response:', { error });
-      if (error) {
-        console.error('❌ signInWithOtp error details:', {
-          message: error.message,
-          status: (error as any).status,
-          code: (error as any).code,
-          fullError: error
-        });
-        throw new Error(`Failed to send OTP: ${error.message}`);
-      }
-      console.log('✅ OTP sent to:', email);
-      setOtpChallenge({ email, reason });
-      setCurrentView('otp');
-    } catch (err: any) {
-      console.error('❌ Critical error in startOtpChallenge:', err);
-      throw err;
-    }
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      },
+    });
+    if (error) throw new Error(`Failed to send OTP: ${error.message}`);
+    setOtpChallenge({ email, reason });
+    setCurrentView('otp');
   };
 
   const checkSession = async () => {
@@ -443,7 +423,7 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      // Create the account
+      // Step 1: Create the account
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -452,7 +432,7 @@ function App() {
       if (signUpError) throw signUpError;
       if (!signUpData.user) throw new Error('Failed to create account');
 
-      // Insert profile (best-effort)
+      // Step 2: Insert profile
       await supabase.from('profiles').insert({
         id: signUpData.user.id,
         email,
@@ -462,14 +442,16 @@ function App() {
         phone: phone || null,
       });
 
-      // Sign in with password to get a guaranteed valid session
-      // (signUp session can be null when email already exists)
+      // Step 3: Sign in to get a guaranteed valid session
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
       if (!signInData.session) throw new Error('Failed to start session');
 
-      // Go straight to dashboard — no OTP for signup
-      await fetchUserProfile(signInData.user.id, signInData.session.access_token);
+      // Step 4: Set state directly — bypass OTP entirely, go straight to products
+      setOtpChallenge(null);
+      setUser({ id: signInData.user.id, email, name, role });
+      setAccessToken(signInData.session.access_token);
+      setCurrentView('dashboard');
     } catch (error: any) {
       throw new Error(error.message || 'Failed to sign up');
     }
