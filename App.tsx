@@ -159,7 +159,7 @@ function AppContent({
         />
       )}
 
-      {!isOnRoutePage && currentView === 'otp' && otpChallenge && (
+      {!isOnRoutePage && currentView === 'otp' && otpChallenge && otpChallenge.reason !== 'signup' && (
         <OtpPage
           email={otpChallenge.email}
           reason={otpChallenge.reason}
