@@ -572,8 +572,30 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     setUpdatingOrderId(orderId);
+    const prevOrder = allOrders.find(o => o.id === orderId);
     await supabase.from('orders').update({ status }).eq('id', orderId);
     setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+
+    // Decrement product stock when order is marked delivered (guard against double-decrement)
+    if (status === 'delivered' && prevOrder?.status !== 'delivered') {
+      const items: any[] = prevOrder?.items || [];
+      for (const item of items) {
+        const productId = item.productId || item.product_id;
+        const qty = item.quantity || 1;
+        if (!productId) continue;
+        const { data: prod } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', productId)
+          .maybeSingle();
+        if (prod != null) {
+          await supabase
+            .from('products')
+            .update({ stock: Math.max(0, prod.stock - qty) })
+            .eq('id', productId);
+        }
+      }
+    }
     setUpdatingOrderId(null);
   };
 

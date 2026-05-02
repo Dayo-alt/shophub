@@ -158,7 +158,7 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
     try {
       const { data: current } = await supabase
         .from('orders')
-        .select('status_history')
+        .select('status_history, status, items')
         .eq('id', orderId)
         .maybeSingle();
 
@@ -178,6 +178,27 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
         setOrders(prev => prev.map(o =>
           o.id === orderId ? { ...o, status: newStatus, statusHistory: history, estimatedDelivery } : o
         ));
+
+        // Decrement product stock for each item when order is delivered
+        if (newStatus === 'delivered' && current?.status !== 'delivered') {
+          const items: any[] = current?.items || [];
+          for (const item of items) {
+            const productId = item.productId || item.product_id;
+            const qty = item.quantity || 1;
+            if (!productId) continue;
+            const { data: prod } = await supabase
+              .from('products')
+              .select('stock')
+              .eq('id', productId)
+              .maybeSingle();
+            if (prod != null) {
+              await supabase
+                .from('products')
+                .update({ stock: Math.max(0, prod.stock - qty) })
+                .eq('id', productId);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to update order status:', error);
