@@ -258,7 +258,7 @@ export function SignupPage({ onSignup, onSwitchToLogin, onGoogleLogin }: SignupP
             {loading ? 'Creating account…' : (
               <>
                 <UserPlus className="size-4" />
-                Create Account
+                Sign Up
               </>
             )}
           </Button>

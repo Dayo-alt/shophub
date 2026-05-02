@@ -159,7 +159,7 @@ function AppContent({
         />
       )}
 
-      {!isOnRoutePage && currentView === 'otp' && otpChallenge && otpChallenge.reason !== 'signup' && (
+      {!isOnRoutePage && currentView === 'otp' && otpChallenge && (
         <OtpPage
           email={otpChallenge.email}
           reason={otpChallenge.reason}
@@ -297,6 +297,12 @@ function App() {
     email: string;
     reason: OtpReason;
   } | null>(null);
+  const [pendingSignup, setPendingSignup] = useState<{
+    name: string;
+    role: 'buyer' | 'seller';
+    country?: string;
+    phone?: string;
+  } | null>(null);
 
   const { t } = useLanguage();
 
@@ -423,36 +429,25 @@ function App() {
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
     try {
-      // Step 1: Create the account
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      // Create account with password (no email sent — confirm email is off)
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { name, role } },
       });
-      if (signUpError) throw signUpError;
-      if (!signUpData.user) throw new Error('Failed to create account');
+      if (error) throw error;
+      if (!data.user) throw new Error('Failed to create account');
 
-      // Step 2: Insert profile
-      await supabase.from('profiles').insert({
-        id: signUpData.user.id,
-        email,
-        name,
-        role,
-        country: country || null,
-        phone: phone || null,
-      });
+      // Store signup details to complete profile after OTP verification
+      setPendingSignup({ name, role, country, phone });
 
-      // Step 3: Sign in to get a guaranteed valid session
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw signInError;
-      if (!signInData.session) throw new Error('Failed to start session');
+      // Sign out the auto-session so signInWithOtp works on an existing user
+      await supabase.auth.signOut();
 
-      // Step 4: Set state directly — bypass OTP entirely, go straight to products
-      setOtpChallenge(null);
-      setUser({ id: signInData.user.id, email, name, role });
-      setAccessToken(signInData.session.access_token);
-      setCurrentView('dashboard');
+      // User now exists → signInWithOtp uses Magic Link template (shows 6-digit code)
+      await startOtpChallenge(email, 'signup');
     } catch (error: any) {
+      setPendingSignup(null);
       throw new Error(error.message || 'Failed to sign up');
     }
   };
@@ -550,6 +545,20 @@ function App() {
       window.localStorage.removeItem(GOOGLE_OTP_FLAG);
     }
 
+    // Complete profile creation for new signups
+    if (pendingSignup) {
+      const { name, role, country, phone } = pendingSignup;
+      await supabase.from('profiles').insert({
+        id: session.user.id,
+        email,
+        name,
+        role,
+        country: country || null,
+        phone: phone || null,
+      });
+      setPendingSignup(null);
+    }
+
     const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
     if (loggedInUser) {
       try {
@@ -569,6 +578,7 @@ function App() {
 
   const handleCancelOtp = async () => {
     setOtpChallenge(null);
+    setPendingSignup(null);
     await supabase.auth.signOut();
     setCurrentView('login');
   };
