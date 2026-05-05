@@ -1352,7 +1352,7 @@ async function sendCartReminderEmail(to: string, subject: string, html: string, 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `${fromName} <${Deno.env.get('RESEND_FROM_EMAIL') || 'orders@resend.dev'}>`, to: [to], subject, html }),
+      body: JSON.stringify({ from: `${fromName} <${Deno.env.get('RESEND_FROM_EMAIL') || 'onboarding@resend.dev'}>`, to: [to], subject, html }),
     });
     if (res.ok) return { ok: true };
     const errBody = await res.text().catch(() => '');
@@ -1599,14 +1599,22 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
 
       for (const [userId, cartUpdatedAt] of userMap) {
         const { data: profile } = await supabase.from('profiles').select('name, email, phone').eq('id', userId).maybeSingle();
-        if (!profile?.email) { debugLog.push(`[${interval.key}] user ${userId}: no email in profile`); continue; }
+        let userEmail = profile?.email || '';
+        if (!userEmail) {
+          // profiles.email missing — fall back to auth.users
+          const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+          userEmail = authUser?.user?.email || '';
+          if (userEmail) debugLog.push(`[${interval.key}] user ${userId}: using auth email ${userEmail} (profiles.email empty)`);
+        }
+        if (!userEmail) { debugLog.push(`[${interval.key}] user ${userId}: no email found in profiles OR auth.users — skipping`); continue; }
+        const effectiveProfile = { name: profile?.name || userEmail.split('@')[0], email: userEmail, phone: profile?.phone || '' };
 
         const { data: cartItems } = await supabase.from('cart_items').select('quantity, products:product_id(id, name, price, image_url)').eq('user_id', userId);
         if (!cartItems?.length) continue;
 
         const cartTotal = (cartItems as any[]).reduce((s: number, i: any) => s + (i.products?.price || 0) * i.quantity, 0);
         const vars: Record<string, string> = {
-          name: String(profile.name || profile.email.split('@')[0] || 'Customer'),
+          name: String(effectiveProfile.name || 'Customer'),
           item_count: String(cartItems.length),
           total: `₦${cartTotal.toLocaleString('en-NG')}`,
           items_list: (cartItems as any[]).map((i: any) => i.products?.name || 'item').join(', '),
@@ -1621,31 +1629,33 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
           const { data: already } = await supabase.from('cart_reminder_log')
             .select('id').eq('user_id', userId).eq('interval_key', interval.key)
             .eq('channel', ch).eq('cart_updated_at', dedupeKey).maybeSingle();
-          if (already) { debugLog.push(`[${interval.key}] already sent ${ch} to ${profile.email}`); continue; }
+          if (already) { debugLog.push(`[${interval.key}] already sent ${ch} to ${effectiveProfile.email}`); continue; }
 
           let status = 'sent'; let sendError: string | null = null;
           try {
             if (ch === 'email') {
               const html = cartEmailHtml(vars.name, cartItems as any[], vars.total, vars.link, chCfg.from_name || 'ShopHub');
-              const result = await sendCartReminderEmail(profile.email, fillTpl(tmpl.subject || 'Your cart is waiting!', vars), html, chCfg.from_name || 'ShopHub');
+              const result = await sendCartReminderEmail(effectiveProfile.email, fillTpl(tmpl.subject || 'Your cart is waiting!', vars), html, chCfg.from_name || 'ShopHub');
               if (!result.ok) { status = 'failed'; sendError = result.error || 'email send failed'; }
-              else debugLog.push(`[${interval.key}] email sent to ${profile.email}`);
+              else debugLog.push(`[${interval.key}] ✅ email sent to ${effectiveProfile.email}`);
             } else if (ch === 'sms') {
-              const result = await sendCartReminderSms(profile.phone || '', fillTpl(tmpl.sms || 'Your cart is waiting! {link}', vars), chCfg);
+              const result = await sendCartReminderSms(effectiveProfile.phone || '', fillTpl(tmpl.sms || 'Your cart is waiting! {link}', vars), chCfg);
               if (!result.ok) { status = 'failed'; sendError = result.error || 'SMS send failed'; }
-              else debugLog.push(`[${interval.key}] SMS sent to ${profile.phone} (${profile.email})`);
-            } else if (ch === 'whatsapp' && profile.phone) {
-              const ok = await sendCartReminderWhatsapp(profile.phone, fillTpl(tmpl.whatsapp || 'Your cart is waiting! {link}', vars), chCfg);
+              else debugLog.push(`[${interval.key}] ✅ SMS sent to ${effectiveProfile.phone} (${effectiveProfile.email})`);
+            } else if (ch === 'whatsapp' && effectiveProfile.phone) {
+              const ok = await sendCartReminderWhatsapp(effectiveProfile.phone, fillTpl(tmpl.whatsapp || 'Your cart is waiting! {link}', vars), chCfg);
               if (!ok) { status = 'failed'; sendError = 'WhatsApp send failed'; }
             } else { continue; }
           } catch (e) { status = 'failed'; sendError = String(e); }
 
-          if (sendError) debugLog.push(`[${interval.key}] ${ch} FAILED for ${profile.email}: ${sendError}`);
+          if (sendError) debugLog.push(`[${interval.key}] ❌ ${ch} FAILED for ${effectiveProfile.email}: ${sendError}`);
           await supabase.from('cart_reminder_log').insert({ user_id: userId, interval_key: interval.key, channel: ch, cart_updated_at: dedupeKey, status, error: sendError });
           if (status === 'sent') totalSent++;
         }
       }
     }
+    // Summary at end of debug so it's visible without scrolling past details
+    debugLog.push('', `=== SUMMARY: ${totalSent} sent ===`);
     return c.json({ ok: true, sent: totalSent, debug: debugLog });
   } catch (e) {
     console.log('cart-check error:', e);

@@ -1671,6 +1671,21 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
               {/* Helper to call edge function */}
               {(() => {
+                const refreshRetentionStats = () => {
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  Promise.all([
+                    fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}`, 'apikey': publicAnonKey },
+                      body: JSON.stringify({ action: 'cart-stats' }),
+                    }).then(r => r.json()).then((j: any) => j.activeCarts ?? 0).catch(() => 0),
+                    supabase.from('cart_reminder_log').select('id', { count: 'exact', head: true }).eq('status', 'sent').gte('sent_at', today.toISOString()),
+                  ]).then(([activeCarts, logs]) => {
+                    setRetentionStats(s => ({ ...s, activeCarts, sentToday: logs.count || 0 }));
+                  });
+                  loadRetentionHistory();
+                };
+
                 const callCartCheck = async (force: boolean) => {
                   const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
                     method: 'POST',
@@ -1702,10 +1717,14 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                         try {
                           const json = await callCartCheck(false);
                           const sent = json.sent ?? 0;
+                          const dbg = json.debug || [];
+                          const errors = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('no email'));
                           const lines = [`✅ Done! ${sent} reminder(s) sent.`];
                           if (json.message) lines.push(json.message);
-                          if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
+                          if (errors.length) lines.push('', '⚠️ Issues:', ...errors);
+                          if (dbg.length) lines.push('', '--- Full Debug ---', ...dbg);
                           alert(lines.join('\n'));
+                          refreshRetentionStats();
                         } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
                         finally { setProcessingNow(false); }
                       }}>
@@ -1718,9 +1737,13 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                         try {
                           const json = await callCartCheck(true);
                           const sent = json.sent ?? 0;
+                          const dbg = json.debug || [];
+                          const errors = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('no email'));
                           const lines = [`✅ Force sent! ${sent} reminder(s) sent to all active carts.`];
-                          if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
+                          if (errors.length) lines.push('', '⚠️ Issues found:', ...errors);
+                          if (dbg.length) lines.push('', '--- Full Debug ---', ...dbg);
                           alert(lines.join('\n'));
+                          refreshRetentionStats();
                         } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
                         finally { setProcessingNow(false); }
                       }}>
