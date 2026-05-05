@@ -35,7 +35,7 @@ export function BuyerHeader({ user, cartItemCount, onNavigatePath, currentPath, 
         .select('id')
         .or(`recipient_id.eq.${authUser.id},is_broadcast.eq.true`);
 
-      if (!msgs || msgs.length === 0) return;
+      if (!msgs || msgs.length === 0) { setUnreadCount(0); return; }
 
       const { data: reads } = await supabase
         .from('message_reads')
@@ -57,6 +57,11 @@ export function BuyerHeader({ user, cartItemCount, onNavigatePath, currentPath, 
 
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Clear badge immediately when user navigates to inbox (inbox marks all read on load)
+  useEffect(() => {
+    if (currentPath === '/buyer/inbox') setUnreadCount(0);
+  }, [currentPath]);
 
   const isProducts = currentPath === '/buyer';
   const isCart = currentPath === '/buyer/cart';

@@ -72,7 +72,7 @@ type AdminSection = 'dashboard' | 'orders' | 'users' | 'revenue' | 'complaints' 
 interface RetentionInterval { key: string; minutes: number; enabled: boolean; label: string; }
 interface RetentionChannels {
   email: { enabled: boolean; from_name: string; };
-  sms: { enabled: boolean; provider: string; api_key: string; username: string; };
+  sms: { enabled: boolean; provider: string; api_key: string; sender_id: string; };
   whatsapp: { enabled: boolean; token: string; phone_number_id: string; };
 }
 interface RetentionTemplate { subject: string; email: string; sms: string; whatsapp: string; }
@@ -95,7 +95,7 @@ const DEFAULT_RETENTION: CartRetentionConfig = {
   ],
   channels: {
     email:    { enabled: true,  from_name: 'ShopHub' },
-    sms:      { enabled: false, provider: 'africas_talking', api_key: '', username: '' },
+    sms:      { enabled: false, provider: 'termii', api_key: '', sender_id: 'ShopHub' },
     whatsapp: { enabled: false, token: '', phone_number_id: '' },
   },
   templates: {
@@ -1677,8 +1677,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                   let json: any = {};
                   try { json = JSON.parse(text); } catch { throw new Error(`Status ${res.status}: ${text.slice(0, 100)}`); }
                   if (!res.ok) throw new Error(json.error || json.detail || json.message || `HTTP ${res.status}`);
-                  const lines = [`✅ Done! ${json.sent ?? 0} reminder(s) sent.`];
-                  if (json.message) lines.push(json.message);
+                  const sent = json.sent ?? 0;
+                  const lines = [sent > 0 ? `✅ ${sent} reminder(s) sent!` : `ℹ️ 0 new reminders sent this run.`];
+                  if (sent === 0) lines.push('This is normal — it means either:\n  • No carts fall in the current time windows right now\n  • Reminders already sent for these carts today\n\nCheck "Reminders Today" stat for total sent.');
+                  if (json.message) lines.push('', json.message);
                   if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
                   alert(lines.join('\n'));
                 } catch (e: any) { alert(`Error: ${e?.message || 'Failed to reach edge function.'}`); }
@@ -1857,18 +1859,18 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                 </div>
                 <Smartphone className="size-4 text-gray-600" />
                 <h3 className="text-sm font-semibold text-gray-900">SMS</h3>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Africa's Talking · Free sandbox</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Termii · Nigerian SMS</span>
               </div>
               <div className="pl-12 space-y-2">
                 <div>
                   <label className="text-xs font-medium text-gray-600 block mb-1">API Key</label>
-                  <input type="password" className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.api_key} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, api_key: e.target.value } } }))} placeholder="AT API Key" />
+                  <input type="password" className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.api_key} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, api_key: e.target.value } } }))} placeholder="Termii API Key" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">Username</label>
-                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.username} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, username: e.target.value } } }))} placeholder="sandbox (for testing)" />
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Sender ID <span className="text-gray-400 font-normal">(max 11 chars, no spaces)</span></label>
+                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.sender_id} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, sender_id: e.target.value } } }))} placeholder="ShopHub" maxLength={11} />
                 </div>
-                <p className="text-xs text-gray-400">Sign up at <span className="text-blue-600">africastalking.com</span> — use username "sandbox" for free testing.</p>
+                <p className="text-xs text-gray-400">Sign up free at <span className="text-blue-600">termii.com</span> → Dashboard → API Key. Register your Sender ID under Settings → Sender IDs.</p>
               </div>
             </Card>
 

@@ -1362,26 +1362,26 @@ async function sendCartReminderEmail(to: string, subject: string, html: string, 
 
 async function sendCartReminderSms(phone: string, message: string, cfg: any): Promise<{ ok: boolean; error?: string }> {
   const TERMII_KEY = Deno.env.get('TERMII_API_KEY') || cfg.api_key;
-  if (!TERMII_KEY) return { ok: false, error: 'SMS not configured — add TERMII_API_KEY to Supabase secrets' };
+  if (!TERMII_KEY) return { ok: false, error: 'SMS not configured — enter your Termii API Key in Channels & Credentials' };
   if (!phone) return { ok: false, error: 'User has no phone number in profile' };
   try {
-    // Normalize phone: strip non-digits, ensure starts with country code
     const to = phone.replace(/[^0-9]/g, '').replace(/^0/, '234');
+    const senderId = cfg.sender_id || Deno.env.get('TERMII_SENDER_ID') || 'ShopHub';
     const res = await fetch('https://api.ng.termii.com/api/sms/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_key: TERMII_KEY,
         to,
-        from: Deno.env.get('TERMII_SENDER_ID') || 'ShopHub',
+        from: senderId,
         sms: message,
         type: 'plain',
         channel: 'generic',
       }),
     });
     const body = await res.json().catch(() => ({})) as any;
-    if (!res.ok || body?.status === 'error' || body?.code >= 400) {
-      return { ok: false, error: `Termii ${res.status}: ${JSON.stringify(body).slice(0, 200)}` };
+    if (!res.ok || body?.status === 'error' || (body?.code && body.code >= 400)) {
+      return { ok: false, error: `Termii error: ${body?.message || body?.description || JSON.stringify(body).slice(0, 200)}` };
     }
     return { ok: true };
   } catch (e) { return { ok: false, error: String(e) }; }
@@ -1405,37 +1405,111 @@ function fillTpl(template: string, vars: Record<string, string>): string {
 }
 
 function cartEmailHtml(name: string, items: any[], total: string, link: string, fromName: string): string {
-  const rows = items.map((i: any) =>
-    `<tr><td style="padding:8px;border-bottom:1px solid #f1f5f9;">${i.products?.name || 'Product'}</td>
-     <td style="padding:8px;border-bottom:1px solid #f1f5f9;text-align:center;">x${i.quantity}</td></tr>`
-  ).join('');
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background:#f8fafc;font-family:sans-serif;">
-<div style="max-width:600px;margin:32px auto;padding:0 16px;">
-  <div style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;">
-      <h1 style="margin:0;color:white;font-size:22px;font-weight:700;">🛒 You left something behind!</h1>
-      <p style="margin:6px 0 0;color:#fef3c7;font-size:14px;">Hi ${name}, your cart is still waiting.</p>
-    </div>
-    <div style="padding:28px 32px;">
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:20px;">
-        <p style="margin:0;font-size:15px;color:#92400e;font-weight:600;">Cart Total: ${total}</p>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;">
-        <thead><tr style="background:#f8fafc;">
-          <th style="padding:8px;text-align:left;color:#64748b;font-size:11px;">PRODUCT</th>
-          <th style="padding:8px;text-align:center;color:#64748b;font-size:11px;">QTY</th>
-        </tr></thead><tbody>${rows}</tbody>
-      </table>
-      <div style="text-align:center;">
-        <a href="${link}" style="display:inline-block;background:#1d4ed8;color:white;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:600;font-size:15px;">Complete Your Purchase</a>
-      </div>
-    </div>
-    <div style="padding:14px 32px;border-top:1px solid #f1f5f9;text-align:center;">
-      <p style="margin:0;font-size:11px;color:#94a3b8;">© ${fromName} · You have items saved in your cart.</p>
-    </div>
-  </div>
-</div></body></html>`;
+  const productRows = items.map((i: any) => {
+    const p = i.products || {};
+    const img = p.image_url
+      ? `<img src="${p.image_url}" alt="${p.name || ''}" width="56" height="56" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block;border:1px solid #e2e8f0;" />`
+      : `<div style="width:56px;height:56px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px;text-align:center;line-height:56px;">🛍️</div>`;
+    const price = p.price ? `₦${Number(p.price).toLocaleString('en-NG')}` : '';
+    return `
+    <tr>
+      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;vertical-align:middle;">
+        <table cellpadding="0" cellspacing="0" style="width:100%;">
+          <tr>
+            <td style="width:72px;padding-right:14px;vertical-align:middle;">${img}</td>
+            <td style="vertical-align:middle;">
+              <p style="margin:0 0 3px;font-size:14px;font-weight:600;color:#1e293b;">${p.name || 'Product'}</p>
+              <p style="margin:0;font-size:12px;color:#64748b;">Qty: ${i.quantity} &nbsp;·&nbsp; ${price}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Your cart is waiting — ${fromName}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+      <!-- Header brand bar -->
+      <tr><td style="background:#0f172a;border-radius:12px 12px 0 0;padding:20px 32px;text-align:center;">
+        <p style="margin:0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🛍️ ${fromName}</p>
+      </td></tr>
+
+      <!-- Hero -->
+      <tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 50%,#dc2626 100%);padding:36px 32px 32px;text-align:center;">
+        <p style="margin:0 0 8px;font-size:36px;">🛒</p>
+        <h1 style="margin:0 0 10px;font-size:26px;font-weight:800;color:#ffffff;line-height:1.2;">You left something behind!</h1>
+        <p style="margin:0;font-size:15px;color:#fed7aa;">Hi <strong>${name}</strong>, your cart is patiently waiting for you.</p>
+      </td></tr>
+
+      <!-- Urgency strip -->
+      <tr><td style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 32px;">
+        <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">⚡ Items in your cart may sell out — complete your order before they're gone!</p>
+      </td></tr>
+
+      <!-- Body -->
+      <tr><td style="background:#ffffff;padding:28px 32px;">
+
+        <!-- Total pill -->
+        <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td><p style="margin:0;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Cart Total</p></td>
+            <td align="right"><p style="margin:0;font-size:22px;font-weight:800;color:#0f172a;">${total}</p></td>
+          </tr></table>
+        </div>
+
+        <!-- Product list -->
+        <p style="margin:0 0 12px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Your Items</p>
+        <table width="100%" cellpadding="0" cellspacing="0">${productRows}</table>
+
+        <!-- CTA -->
+        <div style="text-align:center;margin-top:28px;">
+          <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#f97316,#ea580c);color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:50px;font-weight:700;font-size:16px;letter-spacing:0.01em;box-shadow:0 4px 14px rgba(249,115,22,0.4);">
+            Complete My Purchase →
+          </a>
+          <p style="margin:12px 0 0;font-size:12px;color:#94a3b8;">Tap the button to go straight to your cart</p>
+        </div>
+      </td></tr>
+
+      <!-- Trust bar -->
+      <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 32px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" style="padding:0 8px;">
+              <p style="margin:0;font-size:18px;">🔒</p>
+              <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Secure Payment</p>
+            </td>
+            <td align="center" style="padding:0 8px;">
+              <p style="margin:0;font-size:18px;">🚚</p>
+              <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Fast Delivery</p>
+            </td>
+            <td align="center" style="padding:0 8px;">
+              <p style="margin:0;font-size:18px;">↩️</p>
+              <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Easy Returns</p>
+            </td>
+            <td align="center" style="padding:0 8px;">
+              <p style="margin:0;font-size:18px;">💬</p>
+              <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">24/7 Support</p>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:#0f172a;border-radius:0 0 12px 12px;padding:20px 32px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;">© ${fromName} — Your favourite online marketplace</p>
+        <p style="margin:0;font-size:11px;color:#475569;">You received this because you left items in your cart. <a href="${link}" style="color:#94a3b8;">View cart</a></p>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 }
 
 async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
@@ -1517,7 +1591,7 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
         const { data: profile } = await supabase.from('profiles').select('name, email, phone').eq('id', userId).maybeSingle();
         if (!profile?.email) { debugLog.push(`[${interval.key}] user ${userId}: no email in profile`); continue; }
 
-        const { data: cartItems } = await supabase.from('cart_items').select('quantity, products:product_id(id, name, price)').eq('user_id', userId);
+        const { data: cartItems } = await supabase.from('cart_items').select('quantity, products:product_id(id, name, price, image_url)').eq('user_id', userId);
         if (!cartItems?.length) continue;
 
         const cartTotal = (cartItems as any[]).reduce((s: number, i: any) => s + (i.products?.price || 0) * i.quantity, 0);
