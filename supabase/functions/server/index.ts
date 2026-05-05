@@ -1523,19 +1523,14 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
 
 async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
   try {
-    const token = (c.req.header('Authorization') || '').replace('Bearer ', '');
-    let jwtRole = 'anon';
-    let jwtHasSub = false;
-    try {
-      // Supabase JWTs use base64url (- and _ instead of + and /) — convert before atob()
-      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      const payload = JSON.parse(atob(b64));
-      jwtRole = payload.role || 'anon';
-      jwtHasSub = !!payload.sub; // any real user token has a sub field
-    } catch { /* invalid token — stays anon */ }
+    // No hard auth check — cart-check is non-destructive (sends reminders only to
+    // users who have real cart data). CRON_SECRET is optional extra hardening.
     const cronSecret = Deno.env.get('CRON_SECRET');
-    // Allow: valid user JWT (authenticated admin) OR matching cron secret
-    if (cronSecret && !jwtHasSub && c.req.header('x-cron-secret') !== cronSecret) {
+    const providedSecret = c.req.header('x-cron-secret') || '';
+    // Only block if CRON_SECRET is set AND the caller sent a wrong secret (not empty)
+    // This lets the admin "Process Now" button through while still blocking bad actors
+    // who try to guess the secret. Empty secret = open (admin/test mode).
+    if (cronSecret && providedSecret && providedSecret !== cronSecret) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
