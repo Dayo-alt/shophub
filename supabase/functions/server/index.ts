@@ -1662,6 +1662,11 @@ app.post('/cart-check', async (c) => {
 app.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   if (body?.action === 'cart-check') return runCartCheck(c, body);
+  if (body?.action === 'cart-stats') {
+    const { data } = await supabase.from('cart_items').select('user_id');
+    const activeCarts = new Set((data || []).map((r: any) => r.user_id)).size;
+    return c.json({ activeCarts });
+  }
   if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
   if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
   if (body?.action === 'notify-order') return runNotifyOrder(c, body);
@@ -1673,6 +1678,11 @@ app.all('*', async (c) => {
   if (c.req.method === 'POST') {
     const body = await c.req.json().catch(() => ({})) as any;
     if (body?.action === 'cart-check') return runCartCheck(c, body);
+    if (body?.action === 'cart-stats') {
+      const { data } = await supabase.from('cart_items').select('user_id');
+      const activeCarts = new Set((data || []).map((r: any) => r.user_id)).size;
+      return c.json({ activeCarts });
+    }
     if (body?.action === 'admin-transfer') return runAdminTransfer(c, body);
     if (body?.action === 'notify-shipped') return runNotifyShipped(c, body);
     if (body?.action === 'notify-order') return runNotifyOrder(c, body);

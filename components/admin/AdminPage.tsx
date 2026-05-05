@@ -226,17 +226,29 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
     // Load cart retention config
     supabase.from('cart_retention_config').select('*').eq('id', 1).maybeSingle().then(({ data }) => {
-      if (data) setRetention(data as CartRetentionConfig);
+      if (data) {
+        // Deep-merge DB data with defaults so missing fields (e.g. old SMS structure) don't crash render
+        setRetention({
+          ...DEFAULT_RETENTION,
+          ...data,
+          channels: {
+            ...DEFAULT_RETENTION.channels,
+            ...(data.channels || {}),
+            sms: { ...DEFAULT_RETENTION.channels.sms, ...(data.channels?.sms || {}) },
+          },
+        } as CartRetentionConfig);
+      }
     });
 
     // Load retention stats
     const today = new Date(); today.setHours(0,0,0,0);
     Promise.all([
-      supabase.from('cart_items').select('user_id').then(({ data, error }) => {
-        if (error) console.warn('cart_items stat error:', error.message, error.code);
-        const unique = new Set((data || []).map((r: any) => r.user_id));
-        return unique.size;
-      }),
+      // Use edge function for cart count — bypasses RLS that blocks admin from seeing other users' carts
+      fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}`, 'apikey': publicAnonKey },
+        body: JSON.stringify({ action: 'cart-stats' }),
+      }).then(r => r.json()).then((j: any) => j.activeCarts ?? 0).catch(() => 0),
       supabase.from('cart_reminder_log').select('id', { count: 'exact', head: true })
         .eq('status', 'sent').gte('sent_at', today.toISOString()),
       // Carts recovered: users who got a reminder AND later placed an order
@@ -1660,15 +1672,13 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               <Button size="sm" disabled={processingNow} onClick={async () => {
                 setProcessingNow(true);
                 try {
-                  const { data: { session } } = await supabase.auth.getSession();
-                  const token = session?.access_token ?? publicAnonKey;
+                  // Use the admin's already-authenticated accessToken prop directly
                   const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`,
+                      'Authorization': `Bearer ${accessToken}`,
                       'apikey': publicAnonKey,
-                      'x-cron-secret': 'manual-test',
                       'x-client-info': 'supabase-js/2',
                     },
                     body: JSON.stringify({ action: 'cart-check' }),
@@ -1678,9 +1688,8 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                   try { json = JSON.parse(text); } catch { throw new Error(`Status ${res.status}: ${text.slice(0, 100)}`); }
                   if (!res.ok) throw new Error(json.error || json.detail || json.message || `HTTP ${res.status}`);
                   const sent = json.sent ?? 0;
-                  const lines = [sent > 0 ? `✅ ${sent} reminder(s) sent!` : `ℹ️ 0 new reminders sent this run.`];
-                  if (sent === 0) lines.push('This is normal — it means either:\n  • No carts fall in the current time windows right now\n  • Reminders already sent for these carts today\n\nCheck "Reminders Today" stat for total sent.');
-                  if (json.message) lines.push('', json.message);
+                  const lines = [`✅ Done! ${sent} reminder(s) sent.`];
+                  if (json.message) lines.push(json.message);
                   if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
                   alert(lines.join('\n'));
                 } catch (e: any) { alert(`Error: ${e?.message || 'Failed to reach edge function.'}`); }
