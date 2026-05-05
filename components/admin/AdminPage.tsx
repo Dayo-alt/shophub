@@ -17,6 +17,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
+import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import {
   LayoutDashboard, ShoppingBag, Users, DollarSign, Settings,
   LogOut, Menu, X, TrendingUp, Store, Package,
@@ -2689,6 +2690,9 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               {section === 'profile' ? 'Profile Settings' : navItems.find(n => n.id === section)?.label}
             </h1>
           </div>
+          <div className="flex items-center gap-3">
+          <LanguageSwitcher inline />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-100 transition-colors outline-none">
@@ -2719,6 +2723,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </header>
 
         {/* Scrollable content */}
