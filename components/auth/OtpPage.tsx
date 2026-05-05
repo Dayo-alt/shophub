@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Mail, RefreshCw, AlertCircle, Clock } from 'lucide-react';
+import { ArrowLeft, Mail, RefreshCw, AlertCircle, Clock, ShieldCheck } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -95,19 +95,31 @@ export function OtpPage({ email, reason, onVerify, onResend, onCancel }: OtpPage
 
         {/* Header */}
         <div className="text-center mb-6 space-y-2">
-          <div className="size-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto">
-            <Mail className="size-6 text-blue-600" />
+          <div className={`size-12 rounded-full flex items-center justify-center mx-auto ${reason === 'login' ? 'bg-green-50' : 'bg-blue-50'}`}>
+            {reason === 'login'
+              ? <ShieldCheck className="size-6 text-green-600" />
+              : <Mail className="size-6 text-blue-600" />
+            }
           </div>
-          <h2 className="text-2xl font-semibold text-slate-900">Verify your email</h2>
-          <p className="text-sm text-slate-500">We sent a 6-digit code to</p>
+          <h2 className="text-2xl font-semibold text-slate-900">
+            {reason === 'login' ? 'Two-step verification' : 'Verify your email'}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {reason === 'login'
+              ? 'We sent a 6-digit security code to'
+              : 'We sent a 6-digit code to'}
+          </p>
           <p className="text-sm font-semibold text-slate-800">{email}</p>
         </div>
 
         {/* Delivery notice */}
-        <div className="mb-5 flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5 text-xs text-blue-800">
+        <div className={`mb-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${reason === 'login' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
           <Clock className="size-3.5 shrink-0 mt-0.5" />
           <span>
-            Code usually arrives in <strong>seconds</strong>. Check your spam folder if it doesn't appear. Resending replaces the previous code.
+            {reason === 'login'
+              ? <>For your security, enter the code sent to your email to complete sign-in. Code arrives in <strong>seconds</strong> — check spam if needed.</>
+              : <>Code usually arrives in <strong>seconds</strong>. Check your spam folder if it doesn't appear. Resending replaces the previous code.</>
+            }
           </span>
         </div>
 
@@ -143,12 +155,21 @@ export function OtpPage({ email, reason, onVerify, onResend, onCancel }: OtpPage
 
           <Button
             type="submit"
-            className="w-full h-11 text-base font-semibold"
+            className={`w-full h-11 text-base font-semibold ${reason === 'login' ? 'bg-green-600 hover:bg-green-700' : ''}`}
             disabled={submitting || code.length < 6}
           >
-            {submitting ? 'Verifying…' : 'Verify & Continue'}
+            {submitting
+              ? 'Verifying…'
+              : reason === 'login' ? 'Confirm & Sign In' : 'Verify & Continue'
+            }
           </Button>
         </form>
+
+        {reason === 'login' && (
+          <p className="mt-4 text-center text-xs text-slate-400">
+            This extra step keeps your account secure even if your password is compromised.
+          </p>
+        )}
 
         <div className="mt-5 text-center text-sm text-slate-500 space-y-1.5">
           <p>Didn't receive it?</p>

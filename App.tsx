@@ -341,7 +341,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: true,
+        shouldCreateUser: reason === 'signup',
         emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
       },
     });
@@ -415,16 +415,14 @@ function App() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      if (!data.session?.user) throw new Error('Unable to start session');
+    // Step 1: verify password credentials
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message || 'Invalid email or password');
+    if (!data.session?.user) throw new Error('Unable to start session');
 
-      await supabase.auth.signOut();
-      await startOtpChallenge(email, 'login');
-    } catch (error: any) {
-      throw new Error(error.message || 'Failed to login');
-    }
+    // Step 2: clear the auto-created session, then send OTP for 2FA
+    await supabase.auth.signOut();
+    await startOtpChallenge(email, 'login');
   };
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
