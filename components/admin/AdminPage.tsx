@@ -201,8 +201,12 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   const [adminChatInput, setAdminChatInput] = useState('');
   const [sendingAdminChat, setSendingAdminChat] = useState(false);
   const [adminId, setAdminId]               = useState<string | null>(null);
-  const [msgTab, setMsgTab]                 = useState<'compose' | 'history' | 'chats'>('compose');
+  const [msgTab, setMsgTab]                 = useState<'compose' | 'inbox' | 'history' | 'chats'>('compose');
   const adminChatBottomRef                  = useRef<HTMLDivElement>(null);
+  const [inboxMessages, setInboxMessages]   = useState<any[]>([]);
+  const [loadingInbox, setLoadingInbox]     = useState(false);
+  const [inboxExpandedId, setInboxExpandedId] = useState<string | null>(null);
+  const [adminUnreadCount, setAdminUnreadCount] = useState(0);
 
   /* ── cart retention ── */
   const [retention, setRetention]           = useState<CartRetentionConfig>(DEFAULT_RETENTION);
@@ -212,6 +216,9 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   const [processingNow, setProcessingNow]   = useState(false);
   const [retentionHistory, setRetentionHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showActiveCarts, setShowActiveCarts] = useState(false);
+  const [activeCarts, setActiveCarts]       = useState<any[]>([]);
+  const [loadingActiveCarts, setLoadingActiveCarts] = useState(false);
 
   /* ──────────────────── effects ──────────────────── */
 
@@ -337,6 +344,37 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
     setSubmittingReply(null);
   };
 
+  const fetchAdminInbox = async (uid: string) => {
+    setLoadingInbox(true);
+    const { data } = await supabase
+      .from('messages')
+      .select('id, sender_id, sender_role, subject, body, is_broadcast, created_at')
+      .or(`recipient_id.eq.${uid},is_broadcast.eq.true`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!data) { setLoadingInbox(false); return; }
+
+    const { data: reads } = await supabase
+      .from('message_reads')
+      .select('message_id')
+      .eq('user_id', uid);
+
+    const readIds = new Set((reads || []).map((r: any) => r.message_id));
+    setInboxMessages(data.map((m: any) => ({ ...m, read: readIds.has(m.id) })));
+    setAdminUnreadCount(data.filter((m: any) => !readIds.has(m.id)).length);
+    setLoadingInbox(false);
+  };
+
+  const markAdminMessageRead = async (msgId: string, uid: string) => {
+    await supabase.from('message_reads').upsert(
+      { message_id: msgId, user_id: uid },
+      { onConflict: 'message_id,user_id' }
+    );
+    setInboxMessages(prev => prev.map(m => m.id === msgId ? { ...m, read: true } : m));
+    setAdminUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
   const sendAdminChatMessage = async () => {
     const text = adminChatInput.trim();
     if (!text || !activeChatId || !adminId || sendingAdminChat) return;
@@ -451,7 +489,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setAdminId(user.id);
+      if (user) {
+        setAdminId(user.id);
+        await fetchAdminInbox(user.id);
+      }
     };
     init();
 
@@ -629,7 +670,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
     { id: 'users',      label: 'Customers',  icon: Users },
     { id: 'revenue',    label: 'Revenue',    icon: DollarSign },
     { id: 'complaints', label: 'Complaints', icon: MessageSquare,  badge: complaints.filter(c=>c.status==='open').length || undefined },
-    { id: 'messages',       label: 'Messages',      icon: Megaphone },
+    { id: 'messages',       label: 'Messages',      icon: Megaphone, badge: adminUnreadCount || undefined },
     { id: 'cart-retention', label: 'Cart Recovery',  icon: ShoppingCart },
     { id: 'settings',       label: 'Settings',       icon: Settings },
   ];
@@ -1322,9 +1363,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
         <div className="flex gap-2 border-b border-gray-200 pb-0">
           {([
             { id: 'compose', label: 'Compose', Icon: Megaphone },
+            { id: 'inbox',   label: 'Inbox', Icon: Mail, badge: adminUnreadCount },
             { id: 'history', label: 'Sent History', Icon: History },
-            { id: 'chats',   label: 'Live Support Chats', Icon: Headphones, badge: chatSessions.filter(s => s.status === 'open').length },
-          ] as { id: 'compose' | 'history' | 'chats'; label: string; Icon: any; badge?: number }[]).map(({ id, label, Icon, badge }) => (
+            { id: 'chats',   label: 'Live Support', Icon: Headphones, badge: chatSessions.filter(s => s.status === 'open').length },
+          ] as { id: 'compose' | 'inbox' | 'history' | 'chats'; label: string; Icon: any; badge?: number }[]).map(({ id, label, Icon, badge }) => (
             <button
               key={id}
               onClick={() => setMsgTab(id)}
@@ -1404,6 +1446,56 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               </Button>
             </div>
           </Card>
+        )}
+
+        {/* ── Inbox (received messages) ── */}
+        {msgTab === 'inbox' && (
+          <div className="space-y-2 max-w-2xl">
+            {loadingInbox ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="loading"><span /><span /><span /><span /><span /></div>
+              </div>
+            ) : inboxMessages.length === 0 ? (
+              <Card className="p-10 text-center">
+                <Mail className="size-10 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 font-medium">No messages received yet</p>
+              </Card>
+            ) : (
+              inboxMessages.map(msg => (
+                <Card
+                  key={msg.id}
+                  className={`overflow-hidden transition-shadow hover:shadow-md cursor-pointer ${!msg.read ? 'border-blue-200' : ''}`}
+                  onClick={() => {
+                    setInboxExpandedId(inboxExpandedId === msg.id ? null : msg.id);
+                    if (!msg.read && adminId) markAdminMessageRead(msg.id, adminId);
+                  }}
+                >
+                  <div className={`px-5 py-4 ${!msg.read ? 'bg-blue-50/40' : ''}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          {!msg.read && <span className="size-2 rounded-full bg-blue-500 shrink-0" />}
+                          <p className={`text-sm truncate ${!msg.read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>{msg.subject}</p>
+                          {msg.is_broadcast && (
+                            <span className="text-[10px] bg-orange-50 text-orange-700 border border-orange-200 rounded-full px-2 py-0.5">Broadcast</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 capitalize">From: {msg.sender_role}</p>
+                      </div>
+                      <p className="text-xs text-gray-400 whitespace-nowrap shrink-0">
+                        {new Date(msg.created_at).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })}
+                      </p>
+                    </div>
+                    {inboxExpandedId === msg.id && (
+                      <div className="mt-3 pt-3 border-t text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                        {msg.body}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
         )}
 
         {/* ── Sent History ── */}
@@ -1612,6 +1704,52 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
     setLoadingHistory(false);
   };
 
+  const fetchActiveCartsDetail = async () => {
+    setLoadingActiveCarts(true);
+    // Get all cart items
+    const { data: items } = await supabase
+      .from('cart_items')
+      .select('user_id, product_id, quantity, updated_at')
+      .order('updated_at', { ascending: false });
+
+    if (!items?.length) { setActiveCarts([]); setLoadingActiveCarts(false); return; }
+
+    const userIds = [...new Set(items.map((i: any) => i.user_id))];
+    const productIds = [...new Set(items.map((i: any) => i.product_id))];
+
+    const [{ data: profiles }, { data: products }] = await Promise.all([
+      supabase.from('profiles').select('id, name, email').in('id', userIds),
+      supabase.from('products').select('id, name, price, image').in('id', productIds),
+    ]);
+
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    const productMap = new Map((products || []).map((p: any) => [p.id, p]));
+
+    // Group by user
+    const byUser: Record<string, any> = {};
+    for (const item of items) {
+      if (!byUser[item.user_id]) {
+        byUser[item.user_id] = {
+          profile: profileMap.get(item.user_id) || { name: 'Unknown', email: item.user_id },
+          items: [],
+          lastUpdated: item.updated_at,
+        };
+      }
+      byUser[item.user_id].items.push({
+        ...item,
+        product: productMap.get(item.product_id) || { name: 'Unknown product', price: 0 },
+      });
+      if (item.updated_at > byUser[item.user_id].lastUpdated) {
+        byUser[item.user_id].lastUpdated = item.updated_at;
+      }
+    }
+
+    setActiveCarts(Object.values(byUser).sort((a, b) =>
+      new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
+    ));
+    setLoadingActiveCarts(false);
+  };
+
   const renderCartRetention = () => {
     const cronUrl = `https://${projectId}.supabase.co/functions/v1/server/cart-check`;
 
@@ -1636,8 +1774,29 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
+          {/* Active Carts — clickable */}
+          <Card className="overflow-hidden">
+            <button
+              className="w-full text-left bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white hover:from-blue-600 hover:to-blue-700 transition-colors group"
+              onClick={() => {
+                const next = !showActiveCarts;
+                setShowActiveCarts(next);
+                if (next) fetchActiveCartsDetail();
+              }}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-medium opacity-90">Active Carts</p>
+                <div className="flex items-center gap-1.5 opacity-80">
+                  <ShoppingCart className="size-4" />
+                  <ChevronDown className={`size-3.5 transition-transform ${showActiveCarts ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold">{retentionStats.activeCarts}</p>
+              <p className="text-[10px] opacity-70 mt-0.5 group-hover:opacity-100">Click to view details</p>
+            </button>
+          </Card>
+
           {[
-            { label: 'Active Carts', value: retentionStats.activeCarts, icon: ShoppingCart, color: 'from-blue-500 to-blue-600' },
             { label: 'Reminders Today', value: retentionStats.sentToday, icon: Send, color: 'from-amber-500 to-orange-500' },
             { label: 'Carts Recovered', value: retentionStats.recovered, icon: TrendingUp, color: 'from-green-500 to-emerald-600' },
           ].map(({ label, value, icon: Icon, color }) => (
@@ -1652,6 +1811,98 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
             </Card>
           ))}
         </div>
+
+        {/* Active Carts Detail Panel */}
+        {showActiveCarts && (
+          <Card className="overflow-hidden border-blue-200">
+            <div className="flex items-center justify-between px-5 py-3 bg-blue-50 border-b border-blue-100">
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="size-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-blue-900">Active Carts</h3>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{activeCarts.length} users</span>
+              </div>
+              <button
+                onClick={() => setShowActiveCarts(false)}
+                className="text-blue-400 hover:text-blue-700 transition-colors"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {loadingActiveCarts ? (
+              <div className="flex items-center justify-center py-10">
+                <div className="loading"><span /><span /><span /><span /><span /></div>
+              </div>
+            ) : activeCarts.length === 0 ? (
+              <div className="py-10 text-center">
+                <ShoppingCart className="size-10 text-gray-200 mx-auto mb-2" />
+                <p className="text-sm text-gray-400">No active carts right now</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
+                {activeCarts.map((cart, i) => {
+                  const total = cart.items.reduce((s: number, it: any) => s + (it.product.price || 0) * it.quantity, 0);
+                  return (
+                    <div key={i} className="px-5 py-4">
+                      {/* User row */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="size-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0">
+                            {(cart.profile.name || cart.profile.email || '?')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{cart.profile.name || 'No name'}</p>
+                            <p className="text-xs text-gray-500">{cart.profile.email}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-gray-900">₦{Math.round(total).toLocaleString('en-NG')}</p>
+                          <p className="text-[10px] text-gray-400">{cart.items.length} item{cart.items.length !== 1 ? 's' : ''}</p>
+                        </div>
+                      </div>
+
+                      {/* Cart items */}
+                      <div className="space-y-2 pl-11">
+                        {cart.items.map((item: any, j: number) => (
+                          <div key={j} className="flex items-center gap-3">
+                            {item.product.image ? (
+                              <img src={item.product.image} alt={item.product.name} className="size-9 rounded-md object-cover border border-gray-100 shrink-0" />
+                            ) : (
+                              <div className="size-9 rounded-md bg-gray-100 flex items-center justify-center shrink-0">
+                                <Package className="size-4 text-gray-300" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-gray-800 truncate">{item.product.name}</p>
+                              <p className="text-[10px] text-gray-400">
+                                ₦{Math.round(item.product.price || 0).toLocaleString('en-NG')} × {item.quantity}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs font-semibold text-gray-700">
+                                ₦{Math.round((item.product.price || 0) * item.quantity).toLocaleString('en-NG')}
+                              </p>
+                              <p className="text-[10px] text-gray-400" title={new Date(item.updated_at).toLocaleString()}>
+                                {(() => {
+                                  const diff = Date.now() - new Date(item.updated_at).getTime();
+                                  const mins = Math.floor(diff / 60000);
+                                  if (mins < 60) return `${mins}m ago`;
+                                  const hrs = Math.floor(mins / 60);
+                                  if (hrs < 24) return `${hrs}h ago`;
+                                  return `${Math.floor(hrs / 24)}d ago`;
+                                })()}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-200">
@@ -2018,31 +2269,29 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
   /* ──────────────────── main layout ──────────────────── */
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
 
       {/* ── Sidebar ── */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-60 bg-slate-900 text-white flex flex-col
+        fixed inset-y-0 left-0 z-50 w-60 bg-white border-r border-gray-200 flex flex-col shadow-sm
         transition-transform duration-300 ease-in-out
         lg:relative lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Brand */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700">
-          <div className="size-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <Store className="size-4 text-white" />
-          </div>
+        <div className="flex items-center gap-2 px-5 h-16 border-b border-gray-200 shrink-0">
+          <Store className="size-8 text-blue-600" />
           <div>
-            <p className="text-sm font-bold text-white leading-none">ShopHub</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Admin Console</p>
+            <p className="text-lg font-semibold text-gray-900 leading-none">ShopHub</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Admin Console</p>
           </div>
-          <button className="ml-auto lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}>
+          <button className="ml-auto lg:hidden text-gray-400 hover:text-gray-700" onClick={() => setSidebarOpen(false)}>
             <X className="size-4" />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
+        <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
           {navItems.map(({ id, label, icon: Icon, badge }) => (
             <button
               key={id}
@@ -2050,7 +2299,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                 ${section === id
                   ? 'bg-blue-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 }`}
             >
               <Icon className="size-4 shrink-0" />
@@ -2065,10 +2314,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
         </nav>
 
         {/* Logout */}
-        <div className="px-2 py-4 border-t border-slate-700">
+        <div className="px-2 py-4 border-t border-gray-200">
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors"
           >
             <LogOut className="size-4" />
             Logout
@@ -2084,7 +2333,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
       {/* ── Main area ── */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top header */}
-        <header className="bg-white border-b px-4 py-3 flex items-center gap-3 shrink-0">
+        <header className="bg-white border-b border-gray-200 shadow-sm px-4 h-16 flex items-center gap-3 shrink-0">
           <button className="lg:hidden text-gray-500 hover:text-gray-700" onClick={() => setSidebarOpen(v => !v)}>
             <Menu className="size-5" />
           </button>
@@ -2095,8 +2344,8 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden sm:block text-xs text-gray-400">{t('adminConsole')}</span>
-            <div className="size-7 rounded-full bg-blue-600 flex items-center justify-center">
-              <span className="text-[10px] text-white font-bold">A</span>
+            <div className="size-8 rounded-full bg-blue-600 flex items-center justify-center">
+              <span className="text-xs text-white font-bold">A</span>
             </div>
           </div>
         </header>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Store, Package, BarChart3, LogOut, User, Mail, Key } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
@@ -9,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { supabase } from '../../utils/supabase/client';
 
 interface SellerHeaderProps {
   user: { name: string; email: string };
@@ -19,6 +21,50 @@ interface SellerHeaderProps {
 
 export function SellerHeader({ user, onNavigate, currentView, onLogout }: SellerHeaderProps) {
   const { t } = useLanguage();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id')
+        .or(`recipient_id.eq.${authUser.id},is_broadcast.eq.true`);
+
+      const { data: complaints } = await supabase
+        .from('complaints')
+        .select('id')
+        .eq('seller_id', authUser.id)
+        .eq('status', 'open');
+
+      const { data: reads } = await supabase
+        .from('message_reads')
+        .select('message_id')
+        .eq('user_id', authUser.id);
+
+      const readIds = new Set((reads || []).map((r: any) => r.message_id));
+      const unreadMsgs = (msgs || []).filter(m => !readIds.has(m.id)).length;
+      const unreadComplaints = (complaints || []).filter(c => !readIds.has(`complaint-${c.id}`)).length;
+      setUnreadCount(unreadMsgs + unreadComplaints);
+    };
+
+    fetchUnread();
+
+    const channel = supabase
+      .channel('seller-header-count')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchUnread)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, fetchUnread)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reads' }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => {
+    if (currentView === 'inbox') setUnreadCount(0);
+  }, [currentView]);
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -58,10 +104,15 @@ export function SellerHeader({ user, onNavigate, currentView, onLogout }: Seller
               variant={currentView === 'inbox' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => onNavigate('inbox')}
-              className="gap-2"
+              className="relative gap-2"
             >
               <Mail className="size-4" />
               <span className="hidden sm:inline">{t('inbox') ?? 'Inbox'}</span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 size-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Button>
 
             <Button

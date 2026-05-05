@@ -135,17 +135,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
       .eq('user_id', uid);
 
     const readIds = new Set((reads || []).map((r: any) => r.message_id));
-    const unread = data.filter((m: any) => !readIds.has(m.id));
-
-    // Mark all as read when inbox is opened
-    if (unread.length) {
-      await supabase.from('message_reads').upsert(
-        unread.map((m: any) => ({ message_id: m.id, user_id: uid })),
-        { onConflict: 'message_id,user_id' }
-      );
-    }
-
-    setMessages(data.map((m: any) => ({ ...m, read: true })));
+    setMessages(data.map((m: any) => ({ ...m, read: readIds.has(m.id) })));
   };
 
   const handleReply = async (complaintId: string) => {
