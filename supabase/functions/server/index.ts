@@ -1372,7 +1372,11 @@ async function sendCartReminderSms(phone: string, message: string, cfg: any): Pr
     // Normalize: strip non-digits, prefix with +234 for Nigeria (replace leading 0)
     const digits = phone.replace(/[^0-9+]/g, '');
     const to = digits.startsWith('+') ? digits : '+' + digits.replace(/^0/, '234');
-    const body = new URLSearchParams({ To: to, From: fromNumber, Body: message });
+    // Twilio Messaging Service SID starts with MG — use MessagingServiceSid param; otherwise use From
+    const senderParam = fromNumber.startsWith('MG')
+      ? { MessagingServiceSid: fromNumber }
+      : { From: fromNumber };
+    const body = new URLSearchParams({ To: to, Body: message, ...senderParam });
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {

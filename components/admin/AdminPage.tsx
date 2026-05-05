@@ -1878,10 +1878,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                   <input type="password" className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.auth_token} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, auth_token: e.target.value } } }))} placeholder="Your Twilio Auth Token" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">From Number <span className="text-gray-400 font-normal">(your Twilio trial number)</span></label>
-                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.from_number} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, from_number: e.target.value } } }))} placeholder="+12345678901" />
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Messaging Service SID <span className="text-gray-400 font-normal">(MG… from Twilio console) or phone number</span></label>
+                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.from_number} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, from_number: e.target.value } } }))} placeholder="MG1247ea4bbe72b8d83be85147…" />
                 </div>
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠️ Twilio free trial can only send to verified phone numbers. To send to any number, upgrade to a paid plan ($20 min top-up).</p>
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠️ Free trial only sends to verified numbers. To reach any Nigerian number without restriction, add $20 credit on twilio.com.</p>
               </div>
             </Card>
 
