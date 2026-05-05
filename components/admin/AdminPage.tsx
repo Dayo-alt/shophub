@@ -4,6 +4,7 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Input } from '../ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
@@ -11,6 +12,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
 import {
   LayoutDashboard, ShoppingBag, Users, DollarSign, Settings,
@@ -18,6 +23,7 @@ import {
   Search, RefreshCw, Download, AlertCircle, MessageSquare,
   ChevronDown, ChevronUp, Send, Megaphone, Headphones, Clock,
   Radio, History, ShoppingCart, Play, Mail, Smartphone, MessageCircle,
+  User, KeyRound, Eye, EyeOff, ShieldCheck, CheckCircle2, Pencil,
 } from 'lucide-react';
 
 const NIGERIAN_BANKS = [
@@ -67,7 +73,7 @@ interface LoginEvent {
   created_at: string;
 }
 
-type AdminSection = 'dashboard' | 'orders' | 'users' | 'revenue' | 'complaints' | 'messages' | 'settings' | 'cart-retention';
+type AdminSection = 'dashboard' | 'orders' | 'users' | 'revenue' | 'complaints' | 'messages' | 'settings' | 'cart-retention' | 'profile';
 
 interface RetentionInterval { key: string; minutes: number; enabled: boolean; label: string; }
 interface RetentionChannels {
@@ -202,6 +208,36 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   const [sendingAdminChat, setSendingAdminChat] = useState(false);
   const [adminId, setAdminId]               = useState<string | null>(null);
   const [msgTab, setMsgTab]                 = useState<'compose' | 'inbox' | 'history' | 'chats'>('compose');
+
+  /* ── admin profile ── */
+  const [adminName, setAdminName]           = useState('Admin');
+  const [adminEmail, setAdminEmail]         = useState('');
+  const [profileTab, setProfileTab]         = useState<'info' | 'email' | 'password'>('info');
+  // name
+  const [editName, setEditName]             = useState('');
+  const [savingName, setSavingName]         = useState(false);
+  const [nameMsg, setNameMsg]               = useState('');
+  // email change
+  const [newEmail, setNewEmail]             = useState('');
+  const [emailOtp, setEmailOtp]             = useState('');
+  const [emailOtpSent, setEmailOtpSent]     = useState(false);
+  const [sendingEmailOtp, setSendingEmailOtp] = useState(false);
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [emailMsg, setEmailMsg]             = useState('');
+  const [emailErr, setEmailErr]             = useState('');
+  // password change
+  const [newPassword, setNewPassword]       = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPwd, setShowNewPwd]         = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [pwdOtp, setPwdOtp]                 = useState('');
+  const [pwdOtpSent, setPwdOtpSent]         = useState(false);
+  const [sendingPwdOtp, setSendingPwdOtp]   = useState(false);
+  const [verifyingPwd, setVerifyingPwd]     = useState(false);
+  const [pwdMsg, setPwdMsg]                 = useState('');
+  const [pwdErr, setPwdErr]                 = useState('');
+  // otp cooldown
+  const [otpCooldown, setOtpCooldown]       = useState(0);
   const adminChatBottomRef                  = useRef<HTMLDivElement>(null);
   const [inboxMessages, setInboxMessages]   = useState<any[]>([]);
   const [loadingInbox, setLoadingInbox]     = useState(false);
@@ -226,7 +262,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem('adminSection') as AdminSection | null;
-      if (stored && ['dashboard','orders','users','revenue','complaints','messages','settings','cart-retention'].includes(stored)) {
+      if (stored && ['dashboard','orders','users','revenue','complaints','messages','settings','cart-retention','profile'].includes(stored)) {
         setSection(stored);
       }
     } catch { /* ignore */ }
@@ -491,6 +527,11 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setAdminId(user.id);
+        setAdminEmail(user.email || '');
+        const { data: profile } = await supabase.from('profiles').select('name, email').eq('id', user.id).maybeSingle();
+        const name = (profile as any)?.name || user.email || 'Admin';
+        setAdminName(name);
+        setEditName(name);
         await fetchAdminInbox(user.id);
       }
     };
@@ -1704,6 +1745,311 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
     setLoadingHistory(false);
   };
 
+  /* ──────────────────── admin profile helpers ──────────────────── */
+
+  const startOtpCooldown = () => {
+    setOtpCooldown(30);
+    const timer = setInterval(() => {
+      setOtpCooldown(prev => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSaveName = async () => {
+    if (!editName.trim() || !adminId) return;
+    setSavingName(true); setNameMsg('');
+    await supabase.from('profiles').update({ name: editName.trim() }).eq('id', adminId);
+    setAdminName(editName.trim());
+    setNameMsg('Name updated successfully.');
+    setSavingName(false);
+    setTimeout(() => setNameMsg(''), 3000);
+  };
+
+  const sendProfileOtp = async () => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: adminEmail,
+      options: { shouldCreateUser: false },
+    });
+    if (error) throw new Error(error.message);
+    startOtpCooldown();
+  };
+
+  const handleSendEmailOtp = async () => {
+    setEmailErr(''); setEmailMsg('');
+    if (!newEmail.trim() || !/\S+@\S+\.\S+/.test(newEmail)) { setEmailErr('Enter a valid email address.'); return; }
+    setSendingEmailOtp(true);
+    try {
+      await sendProfileOtp();
+      setEmailOtpSent(true);
+      setEmailMsg('Verification code sent to your current email.');
+    } catch (e: any) { setEmailErr(e.message || 'Failed to send code.'); }
+    finally { setSendingEmailOtp(false); }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    if (emailOtp.length < 6) { setEmailErr('Enter the 6-digit code.'); return; }
+    setVerifyingEmail(true); setEmailErr('');
+    try {
+      const { error } = await supabase.auth.verifyOtp({ email: adminEmail, token: emailOtp, type: 'email' });
+      if (error) throw error;
+      const { error: updateErr } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (updateErr) throw updateErr;
+      await supabase.from('profiles').update({ email: newEmail.trim() }).eq('id', adminId!);
+      setAdminEmail(newEmail.trim());
+      setEmailMsg('Email updated! Check your new inbox for a confirmation link from Supabase.');
+      setEmailOtpSent(false); setEmailOtp(''); setNewEmail('');
+    } catch (e: any) {
+      setEmailErr(e.message?.includes('expired') || e.message?.includes('invalid')
+        ? 'Code expired or invalid. Resend and try again.'
+        : e.message || 'Verification failed.');
+    } finally { setVerifyingEmail(false); }
+  };
+
+  const handleSendPwdOtp = async () => {
+    setPwdErr(''); setPwdMsg('');
+    if (!newPassword || newPassword.length < 8) { setPwdErr('Password must be at least 8 characters.'); return; }
+    if (newPassword !== confirmPassword) { setPwdErr('Passwords do not match.'); return; }
+    setSendingPwdOtp(true);
+    try {
+      await sendProfileOtp();
+      setPwdOtpSent(true);
+      setPwdMsg('Verification code sent to your email.');
+    } catch (e: any) { setPwdErr(e.message || 'Failed to send code.'); }
+    finally { setSendingPwdOtp(false); }
+  };
+
+  const handleVerifyPwdOtp = async () => {
+    if (pwdOtp.length < 6) { setPwdErr('Enter the 6-digit code.'); return; }
+    setVerifyingPwd(true); setPwdErr('');
+    try {
+      const { error } = await supabase.auth.verifyOtp({ email: adminEmail, token: pwdOtp, type: 'email' });
+      if (error) throw error;
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateErr) throw updateErr;
+      setPwdMsg('Password changed successfully.');
+      setPwdOtpSent(false); setPwdOtp(''); setNewPassword(''); setConfirmPassword('');
+    } catch (e: any) {
+      setPwdErr(e.message?.includes('expired') || e.message?.includes('invalid')
+        ? 'Code expired or invalid. Resend and try again.'
+        : e.message || 'Verification failed.');
+    } finally { setVerifyingPwd(false); }
+  };
+
+  const renderAdminProfile = () => (
+    <div className="space-y-6 animate-fade-in-up max-w-2xl">
+      {/* Avatar + info */}
+      <Card className="p-6">
+        <div className="flex items-center gap-4">
+          <div className="size-16 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+            <span className="text-2xl font-bold text-white">{adminName[0]?.toUpperCase()}</span>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{adminName}</h2>
+            <p className="text-sm text-gray-500">{adminEmail}</p>
+            <span className="inline-flex items-center gap-1 mt-1 text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 font-medium">
+              <ShieldCheck className="size-3" /> Administrator
+            </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {([
+          { id: 'info', label: 'Account Info', icon: User },
+          { id: 'email', label: 'Change Email', icon: Mail },
+          { id: 'password', label: 'Change Password', icon: KeyRound },
+        ] as { id: typeof profileTab; label: string; icon: any }[]).map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setProfileTab(id)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${profileTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            <Icon className="size-3.5" />{label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Account Info (name) */}
+      {profileTab === 'info' && (
+        <Card className="p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Pencil className="size-4 text-gray-400" />Display Name</h3>
+          <p className="text-xs text-gray-500">This is the name shown in the top-right of the admin console.</p>
+          <div className="flex gap-3">
+            <Input
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              placeholder="Your name"
+              className="max-w-xs"
+            />
+            <Button onClick={handleSaveName} disabled={savingName || !editName.trim()}>
+              {savingName ? 'Saving…' : 'Save Name'}
+            </Button>
+          </div>
+          {nameMsg && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+              <CheckCircle2 className="size-4 shrink-0" />{nameMsg}
+            </div>
+          )}
+
+          <div className="pt-2 border-t space-y-1">
+            <p className="text-xs font-medium text-gray-700">Email</p>
+            <p className="text-sm text-gray-900">{adminEmail}</p>
+            <p className="text-xs text-gray-400">To change your email, use the "Change Email" tab.</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Tab: Change Email */}
+      {profileTab === 'email' && (
+        <Card className="p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Mail className="size-4 text-gray-400" />Change Email Address</h3>
+          <p className="text-xs text-gray-500">A verification code will be sent to your <strong>current</strong> email. Enter it to confirm the change.</p>
+
+          {!emailOtpSent ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">New Email Address</label>
+                <Input
+                  type="email"
+                  value={newEmail}
+                  onChange={e => { setNewEmail(e.target.value); setEmailErr(''); }}
+                  placeholder="new@example.com"
+                  className="max-w-sm"
+                />
+              </div>
+              {emailErr && <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle className="size-3.5" />{emailErr}</p>}
+              <Button onClick={handleSendEmailOtp} disabled={sendingEmailOtp || !newEmail}>
+                <ShieldCheck className="size-3.5 mr-1.5" />
+                {sendingEmailOtp ? 'Sending code…' : 'Send Verification Code'}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 text-xs text-blue-800">
+                Code sent to <strong>{adminEmail}</strong>. Enter it below to confirm changing your email to <strong>{newEmail}</strong>.
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">6-Digit Code</label>
+                <Input
+                  value={emailOtp}
+                  onChange={e => { setEmailOtp(e.target.value.replace(/\D/g,'').slice(0,6)); setEmailErr(''); }}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  className="w-40 text-center text-xl tracking-widest"
+                  autoFocus
+                />
+              </div>
+              {emailErr && <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle className="size-3.5" />{emailErr}</p>}
+              {emailMsg && <p className="text-xs text-green-700">{emailMsg}</p>}
+              <div className="flex gap-2">
+                <Button onClick={handleVerifyEmailOtp} disabled={verifyingEmail || emailOtp.length < 6}>
+                  {verifyingEmail ? 'Verifying…' : 'Confirm Change'}
+                </Button>
+                <Button variant="outline" disabled={otpCooldown > 0 || sendingEmailOtp} onClick={handleSendEmailOtp}>
+                  {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : 'Resend Code'}
+                </Button>
+                <Button variant="ghost" onClick={() => { setEmailOtpSent(false); setEmailOtp(''); setEmailErr(''); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+          {emailMsg && !emailOtpSent && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+              <CheckCircle2 className="size-4 shrink-0" />{emailMsg}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Tab: Change Password */}
+      {profileTab === 'password' && (
+        <Card className="p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><KeyRound className="size-4 text-gray-400" />Change Password</h3>
+          <p className="text-xs text-gray-500">A verification code will be sent to <strong>{adminEmail}</strong> before the change is applied.</p>
+
+          {!pwdOtpSent ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">New Password</label>
+                <div className="relative max-w-sm">
+                  <Input
+                    type={showNewPwd ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={e => { setNewPassword(e.target.value); setPwdErr(''); }}
+                    placeholder="Min. 8 characters"
+                    className="pr-10"
+                  />
+                  <button type="button" onClick={() => setShowNewPwd(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showNewPwd ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Confirm New Password</label>
+                <div className="relative max-w-sm">
+                  <Input
+                    type={showConfirmPwd ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={e => { setConfirmPassword(e.target.value); setPwdErr(''); }}
+                    placeholder="Repeat password"
+                    className="pr-10"
+                  />
+                  <button type="button" onClick={() => setShowConfirmPwd(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    {showConfirmPwd ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+              {pwdErr && <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle className="size-3.5" />{pwdErr}</p>}
+              <Button onClick={handleSendPwdOtp} disabled={sendingPwdOtp || !newPassword || !confirmPassword}>
+                <ShieldCheck className="size-3.5 mr-1.5" />
+                {sendingPwdOtp ? 'Sending code…' : 'Send Verification Code'}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="bg-green-50 border border-green-200 rounded-md px-3 py-2 text-xs text-green-800">
+                {pwdMsg || `Code sent to ${adminEmail}. Enter it to confirm your new password.`}
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">6-Digit Code</label>
+                <Input
+                  value={pwdOtp}
+                  onChange={e => { setPwdOtp(e.target.value.replace(/\D/g,'').slice(0,6)); setPwdErr(''); }}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  className="w-40 text-center text-xl tracking-widest"
+                  autoFocus
+                />
+              </div>
+              {pwdErr && <p className="text-xs text-red-600 flex items-center gap-1"><AlertCircle className="size-3.5" />{pwdErr}</p>}
+              <div className="flex gap-2">
+                <Button onClick={handleVerifyPwdOtp} disabled={verifyingPwd || pwdOtp.length < 6}>
+                  {verifyingPwd ? 'Verifying…' : 'Confirm Change'}
+                </Button>
+                <Button variant="outline" disabled={otpCooldown > 0 || sendingPwdOtp} onClick={handleSendPwdOtp}>
+                  {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : 'Resend Code'}
+                </Button>
+                <Button variant="ghost" onClick={() => { setPwdOtpSent(false); setPwdOtp(''); setPwdErr(''); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+          {pwdMsg && !pwdOtpSent && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+              <CheckCircle2 className="size-4 shrink-0" />{pwdMsg}
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+
   const fetchActiveCartsDetail = async () => {
     setLoadingActiveCarts(true);
     // Get all cart items
@@ -2264,6 +2610,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
       case 'messages':   return renderMessages();
       case 'settings':   return renderSettings();
       case 'cart-retention': return renderCartRetention();
+      case 'profile':        return renderAdminProfile();
     }
   };
 
@@ -2339,15 +2686,39 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           </button>
           <div className="flex-1">
             <h1 className="text-base font-semibold text-gray-900">
-              {navItems.find(n => n.id === section)?.label}
+              {section === 'profile' ? 'Profile Settings' : navItems.find(n => n.id === section)?.label}
             </h1>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden sm:block text-xs text-gray-400">{t('adminConsole')}</span>
-            <div className="size-8 rounded-full bg-blue-600 flex items-center justify-center">
-              <span className="text-xs text-white font-bold">A</span>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-100 transition-colors outline-none">
+                <div className="size-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+                  <span className="text-xs text-white font-bold">{adminName[0]?.toUpperCase()}</span>
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-medium text-gray-900 leading-none">{adminName}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Administrator</p>
+                </div>
+                <ChevronDown className="size-3.5 text-gray-400 hidden sm:block" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>
+                <p className="text-sm font-medium">{adminName}</p>
+                <p className="text-xs text-gray-400 font-normal truncate">{adminEmail}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleSetSection('profile')}>
+                <User className="size-4 mr-2" />
+                Profile Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onLogout} className="text-red-600">
+                <LogOut className="size-4 mr-2" />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </header>
 
         {/* Scrollable content */}
