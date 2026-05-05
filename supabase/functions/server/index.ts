@@ -1416,19 +1416,24 @@ function fillTpl(template: string, vars: Record<string, string>): string {
 function cartEmailHtml(name: string, items: any[], total: string, link: string, fromName: string): string {
   const productRows = items.map((i: any) => {
     const p = i.products || {};
-    const img = p.image_url
-      ? `<img src="${p.image_url}" alt="${p.name || ''}" width="56" height="56" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block;border:1px solid #e2e8f0;" />`
-      : `<div style="width:56px;height:56px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px;text-align:center;line-height:56px;">🛍️</div>`;
-    const price = p.price ? `₦${Number(p.price).toLocaleString('en-NG')}` : '';
+    const imgSrc = p.image || p.image_url || '';
+    const img = imgSrc
+      ? `<img src="${imgSrc}" alt="${p.name || ''}" width="60" height="60" style="width:60px;height:60px;object-fit:cover;border-radius:8px;display:block;border:1px solid #dbeafe;" />`
+      : `<div style="width:60px;height:60px;border-radius:8px;background:#eff6ff;display:table-cell;vertical-align:middle;text-align:center;font-size:26px;">🛍️</div>`;
+    const itemPrice = p.price ? `₦${Number(p.price).toLocaleString('en-NG')}` : '';
+    const lineTotal = (p.price && i.quantity) ? `₦${(Number(p.price) * i.quantity).toLocaleString('en-NG')}` : '';
     return `
     <tr>
-      <td style="padding:14px 0;border-bottom:1px solid #f1f5f9;vertical-align:middle;">
+      <td style="padding:14px 0;border-bottom:1px solid #eff6ff;vertical-align:middle;">
         <table cellpadding="0" cellspacing="0" style="width:100%;">
           <tr>
-            <td style="width:72px;padding-right:14px;vertical-align:middle;">${img}</td>
+            <td style="width:76px;padding-right:14px;vertical-align:middle;">${img}</td>
             <td style="vertical-align:middle;">
-              <p style="margin:0 0 3px;font-size:14px;font-weight:600;color:#1e293b;">${p.name || 'Product'}</p>
-              <p style="margin:0;font-size:12px;color:#64748b;">Qty: ${i.quantity} &nbsp;·&nbsp; ${price}</p>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#1e3a5f;">${p.name || 'Product'}</p>
+              <p style="margin:0;font-size:12px;color:#64748b;">Qty: ${i.quantity}${itemPrice ? ` &nbsp;·&nbsp; ${itemPrice} each` : ''}</p>
+            </td>
+            <td style="vertical-align:middle;text-align:right;white-space:nowrap;">
+              <p style="margin:0;font-size:14px;font-weight:700;color:#1d4ed8;">${lineTotal}</p>
             </td>
           </tr>
         </table>
@@ -1439,46 +1444,46 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Your cart is waiting — ${fromName}</title></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
+<body style="margin:0;padding:0;background:#eff6ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#eff6ff;padding:32px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
       <!-- Header brand bar -->
-      <tr><td style="background:#0f172a;border-radius:12px 12px 0 0;padding:20px 32px;text-align:center;">
-        <p style="margin:0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🛍️ ${fromName}</p>
+      <tr><td style="background:#1e3a8a;border-radius:12px 12px 0 0;padding:22px 32px;text-align:center;">
+        <p style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">🛍️ ${fromName}</p>
       </td></tr>
 
       <!-- Hero -->
-      <tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 50%,#dc2626 100%);padding:36px 32px 32px;text-align:center;">
-        <p style="margin:0 0 8px;font-size:36px;">🛒</p>
+      <tr><td style="background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 60%,#3b82f6 100%);padding:38px 32px 34px;text-align:center;">
+        <p style="margin:0 0 10px;font-size:40px;">🛒</p>
         <h1 style="margin:0 0 10px;font-size:26px;font-weight:800;color:#ffffff;line-height:1.2;">You left something behind!</h1>
-        <p style="margin:0;font-size:15px;color:#fed7aa;">Hi <strong>${name}</strong>, your cart is patiently waiting for you.</p>
+        <p style="margin:0;font-size:15px;color:#bfdbfe;">Hi <strong>${name}</strong>, your cart is patiently waiting for you.</p>
       </td></tr>
 
       <!-- Urgency strip -->
-      <tr><td style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 32px;">
-        <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">⚡ Items in your cart may sell out — complete your order before they're gone!</p>
+      <tr><td style="background:#fef9c3;border-left:4px solid #eab308;padding:12px 32px;">
+        <p style="margin:0;font-size:13px;color:#713f12;font-weight:600;">⚡ Items in your cart may sell out — complete your order before they're gone!</p>
       </td></tr>
 
       <!-- Body -->
       <tr><td style="background:#ffffff;padding:28px 32px;">
 
         <!-- Total pill -->
-        <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
-          <table width="100%" cellpadding="0" cellspacing="0"><tr>
-            <td><p style="margin:0;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Cart Total</p></td>
-            <td align="right"><p style="margin:0;font-size:22px;font-weight:800;color:#0f172a;">${total}</p></td>
-          </tr></table>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;margin-bottom:24px;">
+          <tr>
+            <td style="padding:16px 20px;"><p style="margin:0;font-size:12px;color:#3b82f6;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Cart Total</p></td>
+            <td style="padding:16px 20px;" align="right"><p style="margin:0;font-size:24px;font-weight:800;color:#1e3a8a;">${total}</p></td>
+          </tr>
+        </table>
 
         <!-- Product list -->
-        <p style="margin:0 0 12px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Your Items</p>
+        <p style="margin:0 0 12px;font-size:11px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Your Items</p>
         <table width="100%" cellpadding="0" cellspacing="0">${productRows}</table>
 
         <!-- CTA -->
-        <div style="text-align:center;margin-top:28px;">
-          <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#f97316,#ea580c);color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:50px;font-weight:700;font-size:16px;letter-spacing:0.01em;box-shadow:0 4px 14px rgba(249,115,22,0.4);">
+        <div style="text-align:center;margin-top:30px;">
+          <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#ffffff;text-decoration:none;padding:17px 44px;border-radius:50px;font-weight:700;font-size:16px;letter-spacing:0.01em;box-shadow:0 4px 18px rgba(37,99,235,0.45);">
             Complete My Purchase →
           </a>
           <p style="margin:12px 0 0;font-size:12px;color:#94a3b8;">Tap the button to go straight to your cart</p>
@@ -1486,23 +1491,23 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
       </td></tr>
 
       <!-- Trust bar -->
-      <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 32px;">
+      <tr><td style="background:#f8fafc;border-top:1px solid #e0f2fe;padding:20px 32px;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td align="center" style="padding:0 8px;">
-              <p style="margin:0;font-size:18px;">🔒</p>
+              <p style="margin:0;font-size:20px;">🔒</p>
               <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Secure Payment</p>
             </td>
             <td align="center" style="padding:0 8px;">
-              <p style="margin:0;font-size:18px;">🚚</p>
+              <p style="margin:0;font-size:20px;">🚚</p>
               <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Fast Delivery</p>
             </td>
             <td align="center" style="padding:0 8px;">
-              <p style="margin:0;font-size:18px;">↩️</p>
+              <p style="margin:0;font-size:20px;">↩️</p>
               <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">Easy Returns</p>
             </td>
             <td align="center" style="padding:0 8px;">
-              <p style="margin:0;font-size:18px;">💬</p>
+              <p style="margin:0;font-size:20px;">💬</p>
               <p style="margin:4px 0 0;font-size:11px;color:#64748b;font-weight:600;">24/7 Support</p>
             </td>
           </tr>
@@ -1510,9 +1515,9 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
       </td></tr>
 
       <!-- Footer -->
-      <tr><td style="background:#0f172a;border-radius:0 0 12px 12px;padding:20px 32px;text-align:center;">
-        <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;">© ${fromName} — Your favourite online marketplace</p>
-        <p style="margin:0;font-size:11px;color:#475569;">You received this because you left items in your cart. <a href="${link}" style="color:#94a3b8;">View cart</a></p>
+      <tr><td style="background:#1e3a8a;border-radius:0 0 12px 12px;padding:22px 32px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;color:#93c5fd;">© ${fromName} — Your favourite online marketplace</p>
+        <p style="margin:0;font-size:11px;color:#60a5fa;">You received this because you left items in your cart. <a href="${link}" style="color:#bfdbfe;">View cart</a></p>
       </td></tr>
 
     </table>
@@ -1617,7 +1622,7 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
 
         const productIds = rawCartItems.map((i: any) => i.product_id).filter(Boolean);
         const { data: products } = await supabase
-          .from('products').select('id, name, price, image_url').in('id', productIds);
+          .from('products').select('id, name, price, image').in('id', productIds);
         const productMap = new Map((products || []).map((p: any) => [p.id, p]));
 
         const enrichedItems = rawCartItems.map((i: any) => ({
