@@ -1361,27 +1361,32 @@ async function sendCartReminderEmail(to: string, subject: string, html: string, 
 }
 
 async function sendCartReminderSms(phone: string, message: string, cfg: any): Promise<{ ok: boolean; error?: string }> {
-  const TERMII_KEY = Deno.env.get('TERMII_API_KEY') || cfg.api_key;
-  if (!TERMII_KEY) return { ok: false, error: 'SMS not configured — enter your Termii API Key in Channels & Credentials' };
+  const accountSid = cfg.account_sid || Deno.env.get('TWILIO_ACCOUNT_SID');
+  const authToken  = cfg.auth_token  || Deno.env.get('TWILIO_AUTH_TOKEN');
+  const fromNumber = cfg.from_number || Deno.env.get('TWILIO_FROM_NUMBER');
+  if (!accountSid || !authToken || !fromNumber) {
+    return { ok: false, error: 'SMS not configured — enter Twilio Account SID, Auth Token and From Number in Channels & Credentials' };
+  }
   if (!phone) return { ok: false, error: 'User has no phone number in profile' };
   try {
-    const to = phone.replace(/[^0-9]/g, '').replace(/^0/, '234');
-    const senderId = cfg.sender_id || Deno.env.get('TERMII_SENDER_ID') || 'ShopHub';
-    const res = await fetch('https://api.ng.termii.com/api/sms/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: TERMII_KEY,
-        to,
-        from: senderId,
-        sms: message,
-        type: 'plain',
-        channel: 'generic',
-      }),
-    });
-    const body = await res.json().catch(() => ({})) as any;
-    if (!res.ok || body?.status === 'error' || (body?.code && body.code >= 400)) {
-      return { ok: false, error: `Termii error: ${body?.message || body?.description || JSON.stringify(body).slice(0, 200)}` };
+    // Normalize: strip non-digits, prefix with +234 for Nigeria (replace leading 0)
+    const digits = phone.replace(/[^0-9+]/g, '');
+    const to = digits.startsWith('+') ? digits : '+' + digits.replace(/^0/, '234');
+    const body = new URLSearchParams({ To: to, From: fromNumber, Body: message });
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+        },
+        body: body.toString(),
+      }
+    );
+    const json = await res.json().catch(() => ({})) as any;
+    if (!res.ok || json?.status === 'failed' || json?.error_code) {
+      return { ok: false, error: `Twilio error ${json?.error_code || res.status}: ${json?.message || json?.error_message || 'Send failed'}` };
     }
     return { ok: true };
   } catch (e) { return { ok: false, error: String(e) }; }

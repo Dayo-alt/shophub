@@ -72,7 +72,7 @@ type AdminSection = 'dashboard' | 'orders' | 'users' | 'revenue' | 'complaints' 
 interface RetentionInterval { key: string; minutes: number; enabled: boolean; label: string; }
 interface RetentionChannels {
   email: { enabled: boolean; from_name: string; };
-  sms: { enabled: boolean; provider: string; api_key: string; sender_id: string; };
+  sms: { enabled: boolean; provider: string; account_sid: string; auth_token: string; from_number: string; };
   whatsapp: { enabled: boolean; token: string; phone_number_id: string; };
 }
 interface RetentionTemplate { subject: string; email: string; sms: string; whatsapp: string; }
@@ -95,7 +95,7 @@ const DEFAULT_RETENTION: CartRetentionConfig = {
   ],
   channels: {
     email:    { enabled: true,  from_name: 'ShopHub' },
-    sms:      { enabled: false, provider: 'termii', api_key: '', sender_id: 'ShopHub' },
+    sms:      { enabled: false, provider: 'twilio', account_sid: '', auth_token: '', from_number: '' },
     whatsapp: { enabled: false, token: '', phone_number_id: '' },
   },
   templates: {
@@ -1859,18 +1859,29 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                 </div>
                 <Smartphone className="size-4 text-gray-600" />
                 <h3 className="text-sm font-semibold text-gray-900">SMS</h3>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Termii · Nigerian SMS</span>
+                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Twilio · No CAC needed · Free trial</span>
               </div>
               <div className="pl-12 space-y-2">
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">API Key</label>
-                  <input type="password" className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.api_key} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, api_key: e.target.value } } }))} placeholder="Termii API Key" />
+                <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 text-xs text-blue-800 space-y-0.5">
+                  <p className="font-semibold">Setup (2 minutes, no CAC needed):</p>
+                  <p>1. Sign up free at <strong>twilio.com</strong> → get $15 free trial credit</p>
+                  <p>2. From Console Dashboard, copy <strong>Account SID</strong> and <strong>Auth Token</strong></p>
+                  <p>3. Go to Phone Numbers → Get a free trial number (starts with +1)</p>
+                  <p>4. Paste all three below and Save</p>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1">Sender ID <span className="text-gray-400 font-normal">(max 11 chars, no spaces)</span></label>
-                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.sender_id} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, sender_id: e.target.value } } }))} placeholder="ShopHub" maxLength={11} />
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Account SID</label>
+                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.account_sid} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, account_sid: e.target.value } } }))} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
                 </div>
-                <p className="text-xs text-gray-400">Sign up free at <span className="text-blue-600">termii.com</span> → Dashboard → API Key. Register your Sender ID under Settings → Sender IDs.</p>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Auth Token</label>
+                  <input type="password" className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.auth_token} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, auth_token: e.target.value } } }))} placeholder="Your Twilio Auth Token" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">From Number <span className="text-gray-400 font-normal">(your Twilio trial number)</span></label>
+                  <input className="w-full border border-gray-200 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30" value={retention.channels.sms.from_number} onChange={e => setRetention(r => ({ ...r, channels: { ...r.channels, sms: { ...r.channels.sms, from_number: e.target.value } } }))} placeholder="+12345678901" />
+                </div>
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠️ Twilio free trial can only send to verified phone numbers. To send to any number, upgrade to a paid plan ($20 min top-up).</p>
               </div>
             </Card>
 
