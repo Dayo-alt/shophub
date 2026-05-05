@@ -1525,9 +1525,17 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
   try {
     const token = (c.req.header('Authorization') || '').replace('Bearer ', '');
     let jwtRole = 'anon';
-    try { jwtRole = JSON.parse(atob(token.split('.')[1])).role || 'anon'; } catch { /* ignore */ }
+    let jwtHasSub = false;
+    try {
+      // Supabase JWTs use base64url (- and _ instead of + and /) — convert before atob()
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(atob(b64));
+      jwtRole = payload.role || 'anon';
+      jwtHasSub = !!payload.sub; // any real user token has a sub field
+    } catch { /* invalid token — stays anon */ }
     const cronSecret = Deno.env.get('CRON_SECRET');
-    if (cronSecret && jwtRole === 'anon' && c.req.header('x-cron-secret') !== cronSecret) {
+    // Allow: valid user JWT (authenticated admin) OR matching cron secret
+    if (cronSecret && !jwtHasSub && c.req.header('x-cron-secret') !== cronSecret) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
