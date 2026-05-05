@@ -1711,18 +1711,19 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                       <p><strong>Force Send Now</strong> — ignores time windows, sends to ALL active carts immediately. Use to test email/SMS delivery.</p>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button size="sm" variant="outline" disabled={processingNow} onClick={async () => {
                         setProcessingNow(true);
                         try {
                           const json = await callCartCheck(false);
-                          const sent = json.sent ?? 0;
-                          const dbg = json.debug || [];
-                          const errors = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('no email'));
-                          const lines = [`✅ Done! ${sent} reminder(s) sent.`];
-                          if (json.message) lines.push(json.message);
-                          if (errors.length) lines.push('', '⚠️ Issues:', ...errors);
-                          if (dbg.length) lines.push('', '--- Full Debug ---', ...dbg);
+                          const dbg: string[] = json.debug || [];
+                          const issues = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('SKIP') || l.includes('ERROR') || l.includes('NONE'));
+                          const summary = dbg.find((l: string) => l.includes('SUMMARY')) || '';
+                          const lines: string[] = [];
+                          lines.push(json.message || `Done — ${json.sent ?? 0} sent, ${json.failed ?? 0} failed, ${json.skipped ?? 0} skipped`);
+                          if (summary) lines.push(summary);
+                          if (issues.length) lines.push('', '⚠️ Issues:', ...issues);
+                          lines.push('', '--- Full Debug ---', ...dbg);
                           alert(lines.join('\n'));
                           refreshRetentionStats();
                         } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
@@ -1732,22 +1733,41 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                       </Button>
 
                       <Button size="sm" disabled={processingNow} className="bg-orange-500 hover:bg-orange-600 text-white" onClick={async () => {
-                        if (!window.confirm('Force send to ALL active carts now? This bypasses time windows and will actually send emails/SMS.')) return;
+                        if (!window.confirm('Force send to ALL active carts now?\n\nThis bypasses time windows and will send emails to every user with items in their cart.')) return;
                         setProcessingNow(true);
                         try {
                           const json = await callCartCheck(true);
-                          const sent = json.sent ?? 0;
-                          const dbg = json.debug || [];
-                          const errors = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('no email'));
-                          const lines = [`✅ Force sent! ${sent} reminder(s) sent to all active carts.`];
-                          if (errors.length) lines.push('', '⚠️ Issues found:', ...errors);
-                          if (dbg.length) lines.push('', '--- Full Debug ---', ...dbg);
+                          const dbg: string[] = json.debug || [];
+                          const issues = dbg.filter((l: string) => l.includes('❌') || l.includes('FAILED') || l.includes('SKIP') || l.includes('ERROR') || l.includes('NONE'));
+                          const lines: string[] = [];
+                          lines.push(`Force Send: ${json.sent ?? 0} sent, ${json.failed ?? 0} failed, ${json.skipped ?? 0} skipped`);
+                          if (issues.length) lines.push('', '⚠️ Issues:', ...issues);
+                          lines.push('', '--- Full Debug ---', ...dbg);
                           alert(lines.join('\n'));
                           refreshRetentionStats();
                         } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
                         finally { setProcessingNow(false); }
                       }}>
                         {processingNow ? 'Sending…' : '⚡ Force Send Now'}
+                      </Button>
+
+                      <Button size="sm" variant="secondary" disabled={processingNow} onClick={async () => {
+                        const email = window.prompt('Send test email to:', user.email);
+                        if (!email) return;
+                        setProcessingNow(true);
+                        try {
+                          const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}`, 'apikey': publicAnonKey },
+                            body: JSON.stringify({ action: 'test-email', to: email }),
+                          });
+                          const json = await res.json();
+                          if (json.ok) alert(`✅ Test email sent to ${email}!\nCheck your inbox (and spam folder).`);
+                          else alert(`❌ Test email FAILED:\n${json.error || JSON.stringify(json)}\n\nThis means the email provider (Brevo/Resend) is not configured correctly in Supabase Edge Function secrets.`);
+                        } catch (e: any) { alert(`Error: ${e?.message}`); }
+                        finally { setProcessingNow(false); }
+                      }}>
+                        📧 Test Email
                       </Button>
                     </div>
                   </div>

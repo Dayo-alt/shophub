@@ -1523,9 +1523,6 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
 
 async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
   try {
-    // Auth: open by default. If CRON_SECRET is set, ONLY block requests that
-    // provide a non-empty wrong secret (stops brute-force guessing).
-    // Requests with NO secret or with 'manual-test' always pass through.
     const cronSecret = Deno.env.get('CRON_SECRET');
     const providedSecret = c.req.header('x-cron-secret') || '';
     if (cronSecret && providedSecret && providedSecret !== 'manual-test' && providedSecret !== cronSecret) {
@@ -1539,124 +1536,159 @@ async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
     const intervals: any[] = cfg.intervals || [];
     const channels: any = cfg.channels || {};
     const templates: any = cfg.templates || {};
-    const appUrl = Deno.env.get('APP_URL') || 'https://shophub.app';
+    const appUrl = Deno.env.get('APP_URL') || 'https://shophub-alpha-three.vercel.app';
     const now = new Date();
     let totalSent = 0;
+    let totalFailed = 0;
+    let totalSkipped = 0;
     const debugLog: string[] = [];
 
-    // Check if updated_at column exists
-    const { error: colCheck } = await supabase.from('cart_items').select('updated_at').limit(1);
-    if (colCheck) {
-      return c.json({ error: 'cart_items.updated_at column missing. Run: ALTER TABLE public.cart_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();', detail: colCheck.message });
-    }
-
-    const body = parsedBody ?? await c.req.json().catch(() => ({})) as any;
+    const body = parsedBody ?? {};
     const forceMode = body?.force === true;
 
-    // Count total carts and show their updated_at values
-    const { data: allCarts } = await supabase.from('cart_items').select('user_id, updated_at');
-    debugLog.push(`Total cart_items rows: ${allCarts?.length ?? 0}`);
-    if (allCarts?.length) {
-      const vals = allCarts.map((r: any) => r.updated_at ?? 'NULL').slice(0, 5);
-      debugLog.push(`updated_at values (first 5): ${vals.join(' | ')}`);
+    // Diagnostic: show raw cart_items data
+    const { data: allCarts, error: allCartsErr } = await supabase.from('cart_items').select('user_id, updated_at');
+    if (allCartsErr) {
+      debugLog.push(`ERROR reading cart_items: ${allCartsErr.message}`);
+      return c.json({ ok: false, sent: 0, debug: debugLog });
+    }
+    debugLog.push(`cart_items rows: ${allCarts?.length ?? 0}${forceMode ? ' (FORCE MODE — all carts will be targeted)' : ''}`);
+
+    const enabledChannelNames = Object.entries(channels).filter(([, ch]: any) => ch.enabled).map(([k]) => k);
+    debugLog.push(`Enabled channels: ${enabledChannelNames.join(', ') || 'NONE — enable email in Channels & Credentials tab'}`);
+    if (!enabledChannelNames.length) {
+      return c.json({ ok: true, sent: 0, message: 'No channels enabled', debug: debugLog });
     }
 
-    const enabledChannels = Object.entries(channels).filter(([, ch]: any) => ch.enabled).map(([k]) => k);
-    debugLog.push(`Enabled channels: ${enabledChannels.join(', ') || 'none'}`);
-    if (forceMode) debugLog.push('FORCE MODE: ignoring time windows, sending to all carts');
-
+    // Process each interval
     for (const interval of intervals) {
-      if (!interval.enabled) continue;
+      if (!interval.enabled) { continue; }
       const mins = interval.minutes as number;
-      const windowEnd = new Date(now.getTime() - mins * 60_000);
-      const windowStart = new Date(now.getTime() - (mins + 5) * 60_000);
 
-      let cartRows: any[] | null;
-      let cartErr: any;
+      // Determine which users to target
+      let targetUserIds: string[];
       if (forceMode) {
-        // Force mode: grab all users with cart items, ignore time window
-        const res = await supabase.from('cart_items').select('user_id, updated_at');
-        cartRows = res.data; cartErr = res.error;
+        targetUserIds = [...new Set((allCarts || []).map((r: any) => r.user_id).filter(Boolean))];
       } else {
-        debugLog.push(`[${interval.key}] window: ${windowStart.toISOString()} → ${windowEnd.toISOString()}`);
-        const res = await supabase
-          .from('cart_items')
-          .select('user_id, updated_at')
+        const windowEnd = new Date(now.getTime() - mins * 60_000);
+        const windowStart = new Date(now.getTime() - (mins + 5) * 60_000);
+        const { data: windowRows, error: windowErr } = await supabase
+          .from('cart_items').select('user_id, updated_at')
           .gte('updated_at', windowStart.toISOString())
           .lte('updated_at', windowEnd.toISOString());
-        cartRows = res.data; cartErr = res.error;
+        if (windowErr) { debugLog.push(`[${interval.key}] window query error: ${windowErr.message}`); continue; }
+        if (!windowRows?.length) continue;
+        // One user can have multiple cart_items — dedupe
+        targetUserIds = [...new Set(windowRows.map((r: any) => r.user_id).filter(Boolean))];
+        debugLog.push(`[${interval.key}] ${targetUserIds.length} user(s) in ${windowStart.toISOString().slice(11,19)}–${windowEnd.toISOString().slice(11,19)} window`);
       }
 
-      if (cartErr) { debugLog.push(`[${interval.key}] query error: ${cartErr.message}`); continue; }
-      debugLog.push(`[${interval.key}] carts in window: ${cartRows?.length ?? 0}`);
-      if (!cartRows?.length) continue;
+      if (!targetUserIds.length) continue;
 
-      const userMap = new Map<string, string>();
-      for (const row of cartRows) {
-        const ex = userMap.get(row.user_id);
-        if (!ex || row.updated_at > ex) userMap.set(row.user_id, row.updated_at);
-      }
-
-      for (const [userId, cartUpdatedAt] of userMap) {
+      for (const userId of targetUserIds) {
+        // ── 1. Resolve user email ──────────────────────────────────────────────
         const { data: profile } = await supabase.from('profiles').select('name, email, phone').eq('id', userId).maybeSingle();
         let userEmail = profile?.email || '';
         if (!userEmail) {
-          // profiles.email missing — fall back to auth.users
-          const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-          userEmail = authUser?.user?.email || '';
-          if (userEmail) debugLog.push(`[${interval.key}] user ${userId}: using auth email ${userEmail} (profiles.email empty)`);
+          const { data: authData } = await supabase.auth.admin.getUserById(userId);
+          userEmail = authData?.user?.email || '';
         }
-        if (!userEmail) { debugLog.push(`[${interval.key}] user ${userId}: no email found in profiles OR auth.users — skipping`); continue; }
-        const effectiveProfile = { name: profile?.name || userEmail.split('@')[0], email: userEmail, phone: profile?.phone || '' };
+        if (!userEmail) {
+          debugLog.push(`[${interval.key}] SKIP user ${userId.slice(0,8)}… — no email in profiles or auth.users`);
+          totalSkipped++;
+          continue;
+        }
+        const userName = profile?.name || userEmail.split('@')[0] || 'Customer';
+        const userPhone = profile?.phone || '';
 
-        const { data: cartItems } = await supabase.from('cart_items').select('quantity, products:product_id(id, name, price, image_url)').eq('user_id', userId);
-        if (!cartItems?.length) continue;
+        // ── 2. Fetch cart items (two-step: no join, avoids FK dependency) ──────
+        const { data: rawCartItems, error: cartErr } = await supabase
+          .from('cart_items').select('product_id, quantity').eq('user_id', userId);
+        if (cartErr) {
+          debugLog.push(`[${interval.key}] SKIP ${userEmail} — cart_items error: ${cartErr.message}`);
+          totalSkipped++;
+          continue;
+        }
+        if (!rawCartItems?.length) {
+          debugLog.push(`[${interval.key}] SKIP ${userEmail} — no cart items found`);
+          totalSkipped++;
+          continue;
+        }
 
-        const cartTotal = (cartItems as any[]).reduce((s: number, i: any) => s + (i.products?.price || 0) * i.quantity, 0);
+        const productIds = rawCartItems.map((i: any) => i.product_id).filter(Boolean);
+        const { data: products } = await supabase
+          .from('products').select('id, name, price, image_url').in('id', productIds);
+        const productMap = new Map((products || []).map((p: any) => [p.id, p]));
+
+        const enrichedItems = rawCartItems.map((i: any) => ({
+          quantity: i.quantity,
+          products: productMap.get(i.product_id) || { id: i.product_id, name: 'Product', price: 0, image_url: null },
+        }));
+        const cartTotal = enrichedItems.reduce((s: number, i: any) => s + (i.products.price || 0) * i.quantity, 0);
+
         const vars: Record<string, string> = {
-          name: String(effectiveProfile.name || 'Customer'),
-          item_count: String(cartItems.length),
+          name: userName,
+          item_count: String(enrichedItems.length),
           total: `₦${cartTotal.toLocaleString('en-NG')}`,
-          items_list: (cartItems as any[]).map((i: any) => i.products?.name || 'item').join(', '),
+          items_list: enrichedItems.map((i: any) => i.products.name).join(', '),
           link: `${appUrl}/buyer/cart`,
         };
         const tmpl = templates[interval.key] || {};
 
+        // ── 3. Send per channel ────────────────────────────────────────────────
         for (const [ch, chCfg] of Object.entries(channels) as [string, any][]) {
           if (!chCfg.enabled) continue;
 
-          const dedupeKey = forceMode ? `force-${now.toISOString()}` : cartUpdatedAt;
+          // Deduplication — use a plain valid timestamp so DB insert works
+          const dedupeTs = forceMode ? now.toISOString() : (allCarts?.find((r: any) => r.user_id === userId)?.updated_at || now.toISOString());
           const { data: already } = await supabase.from('cart_reminder_log')
             .select('id').eq('user_id', userId).eq('interval_key', interval.key)
-            .eq('channel', ch).eq('cart_updated_at', dedupeKey).maybeSingle();
-          if (already) { debugLog.push(`[${interval.key}] already sent ${ch} to ${effectiveProfile.email}`); continue; }
+            .eq('channel', ch).eq('cart_updated_at', dedupeTs).maybeSingle();
+          if (already) {
+            debugLog.push(`[${interval.key}] SKIP ${userEmail} (${ch}) — already sent for this cart snapshot`);
+            totalSkipped++;
+            continue;
+          }
 
-          let status = 'sent'; let sendError: string | null = null;
+          let status = 'sent';
+          let sendError: string | null = null;
           try {
             if (ch === 'email') {
-              const html = cartEmailHtml(vars.name, cartItems as any[], vars.total, vars.link, chCfg.from_name || 'ShopHub');
-              const result = await sendCartReminderEmail(effectiveProfile.email, fillTpl(tmpl.subject || 'Your cart is waiting!', vars), html, chCfg.from_name || 'ShopHub');
-              if (!result.ok) { status = 'failed'; sendError = result.error || 'email send failed'; }
-              else debugLog.push(`[${interval.key}] ✅ email sent to ${effectiveProfile.email}`);
+              const html = cartEmailHtml(userName, enrichedItems, vars.total, vars.link, chCfg.from_name || 'ShopHub');
+              const result = await sendCartReminderEmail(userEmail, fillTpl(tmpl.subject || 'Your cart is waiting!', vars), html, chCfg.from_name || 'ShopHub');
+              if (!result.ok) { status = 'failed'; sendError = result.error || 'unknown email error'; }
+              else debugLog.push(`[${interval.key}] ✅ EMAIL → ${userEmail}`);
             } else if (ch === 'sms') {
-              const result = await sendCartReminderSms(effectiveProfile.phone || '', fillTpl(tmpl.sms || 'Your cart is waiting! {link}', vars), chCfg);
-              if (!result.ok) { status = 'failed'; sendError = result.error || 'SMS send failed'; }
-              else debugLog.push(`[${interval.key}] ✅ SMS sent to ${effectiveProfile.phone} (${effectiveProfile.email})`);
-            } else if (ch === 'whatsapp' && effectiveProfile.phone) {
-              const ok = await sendCartReminderWhatsapp(effectiveProfile.phone, fillTpl(tmpl.whatsapp || 'Your cart is waiting! {link}', vars), chCfg);
+              const result = await sendCartReminderSms(userPhone, fillTpl(tmpl.sms || 'Your cart is waiting! {link}', vars), chCfg);
+              if (!result.ok) { status = 'failed'; sendError = result.error || 'unknown SMS error'; }
+              else debugLog.push(`[${interval.key}] ✅ SMS → ${userPhone || '(no phone)'}`);
+            } else if (ch === 'whatsapp') {
+              if (!userPhone) { continue; }
+              const ok = await sendCartReminderWhatsapp(userPhone, fillTpl(tmpl.whatsapp || 'Your cart is waiting! {link}', vars), chCfg);
               if (!ok) { status = 'failed'; sendError = 'WhatsApp send failed'; }
             } else { continue; }
           } catch (e) { status = 'failed'; sendError = String(e); }
 
-          if (sendError) debugLog.push(`[${interval.key}] ❌ ${ch} FAILED for ${effectiveProfile.email}: ${sendError}`);
-          await supabase.from('cart_reminder_log').insert({ user_id: userId, interval_key: interval.key, channel: ch, cart_updated_at: dedupeKey, status, error: sendError });
+          if (sendError) {
+            debugLog.push(`[${interval.key}] ❌ ${ch.toUpperCase()} FAILED → ${userEmail}: ${sendError}`);
+            totalFailed++;
+          }
+
+          // Log send attempt (non-fatal if insert fails)
+          try {
+            await supabase.from('cart_reminder_log').insert({
+              user_id: userId, interval_key: interval.key, channel: ch,
+              cart_updated_at: dedupeTs, status, error: sendError,
+            });
+          } catch (_) { /* non-fatal */ }
+
           if (status === 'sent') totalSent++;
         }
       }
     }
-    // Summary at end of debug so it's visible without scrolling past details
-    debugLog.push('', `=== SUMMARY: ${totalSent} sent ===`);
-    return c.json({ ok: true, sent: totalSent, debug: debugLog });
+
+    debugLog.push(`\nSUMMARY: ${totalSent} sent, ${totalFailed} failed, ${totalSkipped} skipped`);
+    return c.json({ ok: true, sent: totalSent, failed: totalFailed, skipped: totalSkipped, debug: debugLog });
   } catch (e) {
     console.log('cart-check error:', e);
     return c.json({ error: 'Internal server error', detail: String(e) }, 500);
@@ -1673,6 +1705,12 @@ app.post('/cart-check', async (c) => {
 app.post('/', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   if (body?.action === 'cart-check') return runCartCheck(c, body);
+  if (body?.action === 'test-email') {
+    const to = body.to || '';
+    if (!to) return c.json({ error: 'to field required' }, 400);
+    const result = await sendCartReminderEmail(to, '🧪 ShopHub Cart Recovery Test', `<div style="font-family:sans-serif;padding:32px;max-width:500px;margin:auto;background:#f8fafc;border-radius:12px;"><h2 style="color:#1e293b;">✅ Email Provider Working!</h2><p style="color:#475569;">This is a test email from ShopHub's cart recovery system.</p><p style="color:#475569;">If you received this, emails will be delivered to your customers.</p></div>`, 'ShopHub');
+    return c.json({ ok: result.ok, error: result.error, to });
+  }
   if (body?.action === 'cart-stats') {
     const { data } = await supabase.from('cart_items').select('user_id');
     const activeCarts = new Set((data || []).map((r: any) => r.user_id)).size;
