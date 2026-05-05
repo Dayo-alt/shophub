@@ -1752,7 +1752,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
                       </Button>
 
                       <Button size="sm" variant="secondary" disabled={processingNow} onClick={async () => {
-                        const email = window.prompt('Send test email to:', user.email);
+                        const email = window.prompt('Send test email to (enter your email):');
                         if (!email) return;
                         setProcessingNow(true);
                         try {
