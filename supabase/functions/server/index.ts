@@ -1523,14 +1523,12 @@ function cartEmailHtml(name: string, items: any[], total: string, link: string, 
 
 async function runCartCheck(c: any, parsedBody?: any): Promise<Response> {
   try {
-    // No hard auth check — cart-check is non-destructive (sends reminders only to
-    // users who have real cart data). CRON_SECRET is optional extra hardening.
+    // Auth: open by default. If CRON_SECRET is set, ONLY block requests that
+    // provide a non-empty wrong secret (stops brute-force guessing).
+    // Requests with NO secret or with 'manual-test' always pass through.
     const cronSecret = Deno.env.get('CRON_SECRET');
     const providedSecret = c.req.header('x-cron-secret') || '';
-    // Only block if CRON_SECRET is set AND the caller sent a wrong secret (not empty)
-    // This lets the admin "Process Now" button through while still blocking bad actors
-    // who try to guess the secret. Empty secret = open (admin/test mode).
-    if (cronSecret && providedSecret && providedSecret !== cronSecret) {
+    if (cronSecret && providedSecret && providedSecret !== 'manual-test' && providedSecret !== cronSecret) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 

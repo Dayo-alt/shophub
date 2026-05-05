@@ -1666,37 +1666,70 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
         {/* Tab: Overview */}
         {retentionTab === 'overview' && (
           <div className="space-y-4">
-            <Card className="p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><Play className="size-4 text-green-600" /> Test Reminders</h3>
-              <p className="text-xs text-gray-500 mb-3">Trigger a manual check right now to test your setup. Only sends to carts that match the configured time windows.</p>
-              <Button size="sm" disabled={processingNow} onClick={async () => {
-                setProcessingNow(true);
-                try {
-                  // Use the admin's already-authenticated accessToken prop directly
+            <Card className="p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><Play className="size-4 text-green-600" /> Test Reminders</h3>
+
+              {/* Helper to call edge function */}
+              {(() => {
+                const callCartCheck = async (force: boolean) => {
                   const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server`, {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                       'Authorization': `Bearer ${accessToken}`,
                       'apikey': publicAnonKey,
-                      'x-client-info': 'supabase-js/2',
+                      'x-cron-secret': 'manual-test',
                     },
-                    body: JSON.stringify({ action: 'cart-check' }),
+                    body: JSON.stringify({ action: 'cart-check', force }),
                   });
                   const text = await res.text();
                   let json: any = {};
                   try { json = JSON.parse(text); } catch { throw new Error(`Status ${res.status}: ${text.slice(0, 100)}`); }
                   if (!res.ok) throw new Error(json.error || json.detail || json.message || `HTTP ${res.status}`);
-                  const sent = json.sent ?? 0;
-                  const lines = [`✅ Done! ${sent} reminder(s) sent.`];
-                  if (json.message) lines.push(json.message);
-                  if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
-                  alert(lines.join('\n'));
-                } catch (e: any) { alert(`Error: ${e?.message || 'Failed to reach edge function.'}`); }
-                finally { setProcessingNow(false); }
-              }}>
-                {processingNow ? 'Processing…' : 'Process Now'}
-              </Button>
+                  return json;
+                };
+
+                return (
+                  <div className="space-y-3">
+                    <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2 text-xs text-blue-800 space-y-1">
+                      <p><strong>Process Now</strong> — checks time windows (same as cron). Only sends if a cart falls in 5min/30min/1hr/1day/7day window.</p>
+                      <p><strong>Force Send Now</strong> — ignores time windows, sends to ALL active carts immediately. Use to test email/SMS delivery.</p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={processingNow} onClick={async () => {
+                        setProcessingNow(true);
+                        try {
+                          const json = await callCartCheck(false);
+                          const sent = json.sent ?? 0;
+                          const lines = [`✅ Done! ${sent} reminder(s) sent.`];
+                          if (json.message) lines.push(json.message);
+                          if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
+                          alert(lines.join('\n'));
+                        } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
+                        finally { setProcessingNow(false); }
+                      }}>
+                        {processingNow ? 'Processing…' : 'Process Now'}
+                      </Button>
+
+                      <Button size="sm" disabled={processingNow} className="bg-orange-500 hover:bg-orange-600 text-white" onClick={async () => {
+                        if (!window.confirm('Force send to ALL active carts now? This bypasses time windows and will actually send emails/SMS.')) return;
+                        setProcessingNow(true);
+                        try {
+                          const json = await callCartCheck(true);
+                          const sent = json.sent ?? 0;
+                          const lines = [`✅ Force sent! ${sent} reminder(s) sent to all active carts.`];
+                          if (json.debug?.length) lines.push('', '--- Debug ---', ...json.debug);
+                          alert(lines.join('\n'));
+                        } catch (e: any) { alert(`Error: ${e?.message || 'Failed'}`); }
+                        finally { setProcessingNow(false); }
+                      }}>
+                        {processingNow ? 'Sending…' : '⚡ Force Send Now'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
 
             <Card className="p-5">
