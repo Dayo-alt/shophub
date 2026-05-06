@@ -280,7 +280,7 @@ export interface Order {
 type View = 'home' | 'about' | 'login' | 'signup' | 'otp' | 'dashboard' | 'adminLogin' | 'admin';
 type OtpReason = 'signup' | 'login' | 'google';
 
-// Supabase client is provided via a singleton in utils/supabase/client
+const EDGE_URL = 'https://azelpjscwzkwioxoquft.supabase.co/functions/v1/server';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('home');
@@ -353,9 +353,30 @@ function App() {
   const checkSession = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (session?.user) {
-        // Don't logout Google users automatically - keep them logged in
+        const googlePending = typeof window !== 'undefined'
+          ? window.localStorage.getItem(GOOGLE_OTP_FLAG)
+          : null;
+
+        if (googlePending === '1') {
+          // Google OAuth just completed — require OTP before entering the app
+          window.localStorage.removeItem(GOOGLE_OTP_FLAG);
+          const res = await fetch(`${EDGE_URL}/login-otp-send`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          });
+          if (res.ok) {
+            setOtpChallenge({ email: session.user.email!, reason: 'google' });
+            setCurrentView('otp');
+            return;
+          }
+          // If OTP send fails, fall through to normal login
+        }
+
         await fetchUserProfile(session.user.id, session.access_token ?? null);
       }
     } catch (error) {
@@ -414,8 +435,6 @@ function App() {
     }
   };
 
-  const EDGE_URL = `https://azelpjscwzkwioxoquft.supabase.co/functions/v1/server`;
-
   const handleLogin = async (email: string, password: string) => {
     // Step 1: verify credentials — keeps session active
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -423,7 +442,7 @@ function App() {
     if (!data.session) throw new Error('Login failed — please try again');
 
     // Step 2: send our own 6-digit code via Resend (edge function)
-    const res = await fetch(`${EDGE_URL}/auth/send-otp`, {
+    const res = await fetch(`${EDGE_URL}/login-otp-send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -546,12 +565,12 @@ function App() {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
 
-    if (reason === 'login') {
-      // Session is still active from signInWithPassword — just verify our custom code
+    if (reason === 'login' || reason === 'google') {
+      // Session is still active — just verify our custom code
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session expired. Please log in again.');
 
-      const res = await fetch(`${EDGE_URL}/auth/verify-otp`, {
+      const res = await fetch(`${EDGE_URL}/login-otp-verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -607,11 +626,11 @@ function App() {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
 
-    if (reason === 'login') {
+    if (reason === 'login' || reason === 'google') {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session expired. Please log in again.');
 
-      const res = await fetch(`${EDGE_URL}/auth/send-otp`, {
+      const res = await fetch(`${EDGE_URL}/login-otp-send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -665,6 +684,9 @@ function App() {
 
   const handleUserGoogleLogin = async () => {
     await supabase.auth.signOut();
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(GOOGLE_OTP_FLAG, '1');
+    }
     supabase.auth
       .signInWithOAuth({
         provider: 'google',
@@ -675,6 +697,7 @@ function App() {
       })
       .then(({ error }) => {
         if (error) {
+          if (typeof window !== 'undefined') window.localStorage.removeItem(GOOGLE_OTP_FLAG);
           alert(error.message);
         }
       });

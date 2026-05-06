@@ -359,7 +359,7 @@ async function sendEmailShopHub(to: string, subject: string, html: string, fromN
 }
 
 // ── Login OTP: generate code + send via email ────────────────────────────────
-app.post('/auth/send-otp', async (c) => {
+app.post('/login-otp-send', async (c) => {
   const token = c.req.header('Authorization')?.split(' ')[1];
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
@@ -413,7 +413,7 @@ app.post('/auth/send-otp', async (c) => {
 });
 
 // ── Login OTP: verify code ───────────────────────────────────────────────────
-app.post('/auth/verify-otp', async (c) => {
+app.post('/login-otp-verify', async (c) => {
   const token = c.req.header('Authorization')?.split(' ')[1];
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
