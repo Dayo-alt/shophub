@@ -358,6 +358,90 @@ async function sendEmailShopHub(to: string, subject: string, html: string, fromN
   console.log(`No email provider available — could not send to ${to}`);
 }
 
+// ── Login OTP: generate code + send via email ────────────────────────────────
+app.post('/auth/send-otp', async (c) => {
+  const token = c.req.header('Authorization')?.split(' ')[1];
+  if (!token) return c.json({ error: 'Unauthorized' }, 401);
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  // Invalidate any existing unused codes for this user
+  await supabase.from('login_otp_challenges').update({ used: true })
+    .eq('user_id', user.id).eq('used', false);
+
+  const { error: insertErr } = await supabase.from('login_otp_challenges')
+    .insert({ user_id: user.id, code, expires_at: expiresAt });
+
+  if (insertErr) {
+    console.log('OTP insert error:', insertErr.message);
+    return c.json({ error: 'Failed to create verification code' }, 500);
+  }
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f0f4ff;font-family:sans-serif;">
+<div style="max-width:480px;margin:40px auto;padding:0 16px;">
+  <div style="background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(59,130,246,.15);">
+    <div style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);padding:32px;text-align:center;">
+      <div style="width:56px;height:56px;background:rgba(255,255,255,.2);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:12px;">🔐</div>
+      <h1 style="margin:0;color:white;font-size:22px;font-weight:700;">Login Verification</h1>
+      <p style="margin:6px 0 0;color:rgba(255,255,255,.8);font-size:14px;">Enter this code to sign in to ShopHub</p>
+    </div>
+    <div style="padding:40px 32px;text-align:center;">
+      <p style="margin:0 0 8px;color:#64748b;font-size:13px;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;">Your Security Code</p>
+      <div style="background:#f8fafc;border:2px dashed #93c5fd;border-radius:12px;padding:20px;margin:0 0 24px;">
+        <span style="font-size:44px;font-weight:800;letter-spacing:14px;color:#1e3a8a;font-family:monospace;">${code}</span>
+      </div>
+      <p style="margin:0 0 24px;color:#94a3b8;font-size:13px;">⏱ Valid for <strong>10 minutes</strong> &nbsp;·&nbsp; Do not share this code</p>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px;text-align:left;">
+        <p style="margin:0;color:#92400e;font-size:12px;">⚠️ If you didn't request this code, someone may have your password. Ignore this email and consider changing your password.</p>
+      </div>
+    </div>
+    <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+      <p style="margin:0;color:#94a3b8;font-size:12px;">ShopHub &nbsp;·&nbsp; Secure Login</p>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  await sendEmailShopHub(user.email!, 'Your ShopHub login code', html, 'ShopHub Security');
+  return c.json({ success: true });
+});
+
+// ── Login OTP: verify code ───────────────────────────────────────────────────
+app.post('/auth/verify-otp', async (c) => {
+  const token = c.req.header('Authorization')?.split(' ')[1];
+  if (!token) return c.json({ error: 'Unauthorized' }, 401);
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+  const { code } = await c.req.json();
+  if (!code) return c.json({ error: 'Missing code' }, 400);
+
+  const { data: challenge } = await supabase
+    .from('login_otp_challenges')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('code', String(code).trim())
+    .eq('used', false)
+    .gte('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!challenge) {
+    return c.json({ error: 'Invalid or expired code', valid: false }, 400);
+  }
+
+  await supabase.from('login_otp_challenges').update({ used: true }).eq('id', challenge.id);
+  return c.json({ valid: true });
+});
+
 // ── Email helper ─────────────────────────────────────────────────────────────
 async function sendSellerOrderEmail(
   sellerEmail: string,

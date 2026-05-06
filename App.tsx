@@ -414,23 +414,27 @@ function App() {
     }
   };
 
+  const EDGE_URL = `https://azelpjscwzkwioxoquft.supabase.co/functions/v1/server`;
+
   const handleLogin = async (email: string, password: string) => {
-    // Step 1: verify credentials — throws if wrong password
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // Step 1: verify credentials — keeps session active
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message || 'Invalid email or password');
+    if (!data.session) throw new Error('Login failed — please try again');
 
-    // Step 2: clear session so signInWithOtp can issue a fresh token
-    await supabase.auth.signOut();
-
-    // Step 3: send 6-digit OTP to the user's email (same flow as signup)
-    const { error: otpErr } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+    // Step 2: send our own 6-digit code via Resend (edge function)
+    const res = await fetch(`${EDGE_URL}/auth/send-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${data.session.access_token}`,
       },
     });
-    if (otpErr) throw new Error(otpErr.message || 'Failed to send verification code');
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      await supabase.auth.signOut();
+      throw new Error(result.error || 'Failed to send verification code');
+    }
 
     setOtpChallenge({ email, reason: 'login' });
     setCurrentView('otp');
@@ -540,49 +544,87 @@ function App() {
 
   const handleVerifyOtp = async (code: string) => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
-    const { email } = otpChallenge;
-    const { data, error } = await supabase.auth.verifyOtp({
-      email,
-      token: code,
-      type: 'email',
-    });
-    if (error) throw error;
-    const session = data.session;
-    if (!session?.user) throw new Error('Invalid or expired code');
+    const { email, reason } = otpChallenge;
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(GOOGLE_OTP_FLAG);
-    }
+    if (reason === 'login') {
+      // Session is still active from signInWithPassword — just verify our custom code
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired. Please log in again.');
 
-    // Complete profile creation for new signups
-    if (pendingSignup) {
-      const { name, role, country, phone } = pendingSignup;
-      await supabase.from('profiles').insert({
-        id: session.user.id,
-        email,
-        name,
-        role,
-        country: country || null,
-        phone: phone || null,
+      const res = await fetch(`${EDGE_URL}/auth/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ code }),
       });
-      setPendingSignup(null);
-    }
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.valid) {
+        throw new Error(result.error || 'Invalid or expired code');
+      }
 
-    const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
-    if (loggedInUser) {
-      try {
-        await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login');
-      } catch (e) {
-        console.error('Failed to record verified login', e);
+      const loggedInUser = await fetchUserProfile(session.user.id, session.access_token);
+      if (loggedInUser) {
+        await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login').catch(() => {});
+      }
+    } else {
+      // signup / google: use Supabase verifyOtp
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email',
+      });
+      if (error) throw error;
+      const session = data.session;
+      if (!session?.user) throw new Error('Invalid or expired code');
+
+      if (typeof window !== 'undefined') window.localStorage.removeItem(GOOGLE_OTP_FLAG);
+
+      if (pendingSignup) {
+        const { name, role, country, phone } = pendingSignup;
+        await supabase.from('profiles').insert({
+          id: session.user.id,
+          email,
+          name,
+          role,
+          country: country || null,
+          phone: phone || null,
+        });
+        setPendingSignup(null);
+      }
+
+      const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
+      if (loggedInUser) {
+        await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login').catch(() => {});
       }
     }
+
     setOtpChallenge(null);
   };
 
   const handleResendOtp = async () => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
-    await startOtpChallenge(email, reason);
+
+    if (reason === 'login') {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired. Please log in again.');
+
+      const res = await fetch(`${EDGE_URL}/auth/send-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to resend code');
+      }
+    } else {
+      await startOtpChallenge(email, reason);
+    }
   };
 
   const handleCancelOtp = async () => {
