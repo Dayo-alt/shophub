@@ -17,7 +17,6 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
-import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import {
   LayoutDashboard, ShoppingBag, Users, DollarSign, Settings,
   LogOut, Menu, X, TrendingUp, Store, Package,
@@ -2691,7 +2690,6 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-          <LanguageSwitcher inline />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
