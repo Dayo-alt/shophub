@@ -415,14 +415,22 @@ function App() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    // Step 1: verify password credentials
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // Step 1: verify credentials — throws if wrong password
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message || 'Invalid email or password');
-    if (!data.session?.user) throw new Error('Unable to start session');
 
-    // Step 2: send re-authentication OTP (session stays active)
-    const { error: reauth } = await supabase.auth.reauthenticate();
-    if (reauth) throw new Error('Failed to send verification code: ' + reauth.message);
+    // Step 2: clear session so signInWithOtp can issue a fresh token
+    await supabase.auth.signOut();
+
+    // Step 3: send 6-digit OTP to the user's email (same flow as signup)
+    const { error: otpErr } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      },
+    });
+    if (otpErr) throw new Error(otpErr.message || 'Failed to send verification code');
 
     setOtpChallenge({ email, reason: 'login' });
     setCurrentView('otp');
@@ -532,11 +540,11 @@ function App() {
 
   const handleVerifyOtp = async (code: string) => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
-    const { email, reason } = otpChallenge;
+    const { email } = otpChallenge;
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token: code,
-      type: (reason === 'login' ? 'reauthentication' : 'email') as any,
+      type: 'email',
     });
     if (error) throw error;
     const session = data.session;
@@ -574,12 +582,7 @@ function App() {
   const handleResendOtp = async () => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
-    if (reason === 'login') {
-      const { error } = await supabase.auth.reauthenticate();
-      if (error) throw error;
-    } else {
-      await startOtpChallenge(email, reason);
-    }
+    await startOtpChallenge(email, reason);
   };
 
   const handleCancelOtp = async () => {
