@@ -4,6 +4,7 @@ import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { supabase } from '../../utils/supabase/client';
+import { useLanguage } from '../../utils/i18n/LanguageContext';
 
 interface BuyerInboxProps {
   onBackToProducts: () => void;
@@ -21,6 +22,7 @@ interface InboxMessage {
 }
 
 export const BuyerInbox: FC<BuyerInboxProps> = ({ onBackToProducts }) => {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -110,21 +112,21 @@ export const BuyerInbox: FC<BuyerInboxProps> = ({ onBackToProducts }) => {
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2">
-            Inbox
+            {t('inboxTitle')}
             {unreadCount > 0 && (
               <span className="text-sm bg-red-500 text-white font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
             )}
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Messages from ShopHub admin and sellers</p>
+          <p className="text-sm text-gray-500 mt-0.5">{t('inboxSubtitle')}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={onBackToProducts}>Back to products</Button>
+        <Button variant="outline" size="sm" onClick={onBackToProducts}>{t('backToProducts')}</Button>
       </div>
 
       {messages.length === 0 ? (
         <Card className="p-12 text-center">
           <Mail className="size-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No messages yet</p>
-          <p className="text-sm text-gray-400 mt-1">Messages from ShopHub and sellers will appear here.</p>
+          <p className="text-gray-500 font-medium">{t('inboxNoMessages')}</p>
+          <p className="text-sm text-gray-400 mt-1">{t('inboxNoMessagesSubtitle')}</p>
         </Card>
       ) : (
         <div className="space-y-3">
@@ -159,31 +161,31 @@ export const BuyerInbox: FC<BuyerInboxProps> = ({ onBackToProducts }) => {
                           {msg.subject}
                         </p>
                         {msg.is_broadcast && (
-                          <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">Announcement</Badge>
+                          <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">{t('announcementBadge')}</Badge>
                         )}
                       </div>
                       <p className="text-xs text-gray-500 capitalize">
-                        From: {msg.is_broadcast ? 'ShopHub Admin (Broadcast)' : msg.sender_role}
+                        {t('fromLabel')} {msg.is_broadcast ? 'ShopHub Admin (Broadcast)' : msg.sender_role}
                       </p>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 whitespace-nowrap shrink-0">
                     {new Date(msg.created_at).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })}
                   </p>
-                </div>{/* ↑ end clickable header row */}
+                </div>
 
                 {expandedId === msg.id && (
                   <div className="mt-3 pt-3 border-t space-y-3">
                     <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{msg.body}</p>
                     {!msg.is_broadcast && msg.sender_id && (
                       replySent[msg.id] ? (
-                        <p className="text-xs text-green-600 font-medium">Reply sent ✓</p>
+                        <p className="text-xs text-green-600 font-medium">{t('replySentLabel')}</p>
                       ) : (
                         <div className="flex gap-2 pt-1">
                           <textarea
                             rows={2}
                             className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                            placeholder="Write a reply…"
+                            placeholder={t('writeReplyPlaceholder')}
                             value={replyText[msg.id] || ''}
                             onChange={e => setReplyText(r => ({ ...r, [msg.id]: e.target.value }))}
                           />
@@ -194,7 +196,7 @@ export const BuyerInbox: FC<BuyerInboxProps> = ({ onBackToProducts }) => {
                             onClick={() => handleReply(msg)}
                           >
                             <Send className="size-3.5 mr-1" />
-                            {sendingReply === msg.id ? 'Sending…' : 'Send'}
+                            {sendingReply === msg.id ? t('sendingLabel') : t('sendLabel')}
                           </Button>
                         </div>
                       )

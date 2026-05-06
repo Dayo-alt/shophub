@@ -4,6 +4,7 @@ import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { supabase } from '../../utils/supabase/client';
+import { useLanguage } from '../../utils/i18n/LanguageContext';
 
 interface SellerInboxProps {
   accessToken: string;
@@ -42,6 +43,7 @@ interface InboxMessage {
 type Tab = 'complaints' | 'messages';
 
 export function SellerInbox({ accessToken }: SellerInboxProps) {
+  const { t } = useLanguage();
   const [tab, setTab] = useState<Tab>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
@@ -194,8 +196,8 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in-up">
       <div className="mb-6">
-        <h1 className="text-gray-900 mb-1">Inbox</h1>
-        <p className="text-sm text-gray-500">Buyer complaints and messages from admin</p>
+        <h1 className="text-gray-900 mb-1">{t('inboxTitle')}</h1>
+        <p className="text-sm text-gray-500">{t('sellerInboxSubtitle')}</p>
       </div>
 
       {/* Tabs */}
@@ -207,7 +209,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
           }`}
         >
           <MessageSquare className="size-4" />
-          Complaints
+          {t('complaintsTab')}
           {openComplaints > 0 && (
             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{openComplaints}</span>
           )}
@@ -219,7 +221,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
           }`}
         >
           <Mail className="size-4" />
-          Messages
+          {t('messagesTab')}
           {unreadMessages > 0 && (
             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadMessages}</span>
           )}
@@ -232,7 +234,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
           {complaints.length === 0 ? (
             <Card className="p-12 text-center">
               <MessageSquare className="size-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No complaints yet</p>
+              <p className="text-gray-500">{t('noComplaintsYet')}</p>
             </Card>
           ) : (
             complaints.map(complaint => {
@@ -264,7 +266,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
                           <span className="text-[10px] text-gray-400">{complaint.replies.length} repl{complaint.replies.length === 1 ? 'y' : 'ies'}</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">From: {complaint.buyer_email}</p>
+                      <p className="text-xs text-gray-500">{t('complaintFromLabel')} {complaint.buyer_email}</p>
                       <p className="text-xs text-gray-400 mt-0.5">
                         Order #{complaint.order_id?.slice(-8).toUpperCase()} · {new Date(complaint.created_at).toLocaleDateString()}
                       </p>
@@ -309,7 +311,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
                         <textarea
                           rows={2}
                           className="flex-1 border border-gray-200 rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                          placeholder="Write a reply to the buyer…"
+                          placeholder={t('replyPlaceholder')}
                           value={replyText[complaint.id] || ''}
                           onChange={e => setReplyText(r => ({ ...r, [complaint.id]: e.target.value }))}
                         />
@@ -320,7 +322,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
                           className="self-end"
                         >
                           <Send className="size-3.5 mr-1" />
-                          Reply
+                          {submitting === complaint.id ? t('submittingReplyBtn') : t('submitReplyBtn')}
                         </Button>
                       </div>
                     </div>
@@ -338,7 +340,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
           {messages.length === 0 ? (
             <Card className="p-12 text-center">
               <Mail className="size-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No messages yet</p>
+              <p className="text-gray-500">{t('sellerInboxNoMessages')}</p>
             </Card>
           ) : (
             messages.map(msg => (
@@ -357,7 +359,7 @@ export function SellerInbox({ accessToken }: SellerInboxProps) {
                       <p className={`text-sm ${!msg.read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>{msg.subject}</p>
                       {msg.is_broadcast && <Badge variant="outline" className="text-[10px]">Broadcast</Badge>}
                     </div>
-                    <p className="text-xs text-gray-500 capitalize">From: {msg.sender_role}</p>
+                    <p className="text-xs text-gray-500 capitalize">{t('fromLabel')} {msg.sender_role}</p>
                   </div>
                   <p className="text-xs text-gray-400 whitespace-nowrap">{new Date(msg.created_at).toLocaleDateString()}</p>
                 </div>

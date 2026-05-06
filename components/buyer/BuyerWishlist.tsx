@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { supabase } from '../../utils/supabase/client';
 import { Product } from '../../App';
 import { ProductCard } from '../ProductCard';
+import { useLanguage } from '../../utils/i18n/LanguageContext';
 
 interface BuyerWishlistProps {
   onBackToProducts: () => void;
@@ -14,6 +15,7 @@ type WishlistItem = {
 };
 
 export const BuyerWishlist: FC<BuyerWishlistProps> = ({ onBackToProducts }) => {
+  const { t } = useLanguage();
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -87,19 +89,19 @@ export const BuyerWishlist: FC<BuyerWishlistProps> = ({ onBackToProducts }) => {
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in-up">
       <div className="flex items-center justify-between mb-4 gap-4">
-        <h1 className="text-2xl font-semibold">Wishlist</h1>
+        <h1 className="text-2xl font-semibold">{t('wishlistTitle')}</h1>
         <Button variant="outline" size="sm" onClick={onBackToProducts}>
-          Back to products
+          {t('backToProducts')}
         </Button>
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-600">Loading your wishlist...</p>
+        <p className="text-sm text-gray-600">{t('loadingWishlist')}</p>
       ) : items.length === 0 ? (
         <div className="mt-6 text-sm text-gray-600">
-          <p className="mb-3">You have no items in your wishlist yet.</p>
+          <p className="mb-3">{t('wishlistEmpty')}</p>
           <Button size="sm" onClick={onBackToProducts}>
-            Browse products
+            {t('browseProducts')}
           </Button>
         </div>
       ) : (
@@ -116,7 +118,7 @@ export const BuyerWishlist: FC<BuyerWishlistProps> = ({ onBackToProducts }) => {
                 size="sm"
                 onClick={() => handleRemove(item.productId)}
               >
-                Remove from wishlist
+                {t('removeFromWishlist')}
               </Button>
             </div>
           ))}

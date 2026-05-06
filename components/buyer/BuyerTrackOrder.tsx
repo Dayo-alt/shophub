@@ -5,6 +5,7 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { supabase } from '../../utils/supabase/client';
 import { Order } from '../../App';
+import { useLanguage } from '../../utils/i18n/LanguageContext';
 
 interface BuyerTrackOrderProps {
   accessToken: string;
@@ -12,6 +13,7 @@ interface BuyerTrackOrderProps {
 }
 
 export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackToProducts }) => {
+  const { t } = useLanguage();
   const [reference, setReference] = useState('');
   const [loading, setLoading] = useState(false);
   const [foundOrder, setFoundOrder] = useState<Order | null>(null);
@@ -97,24 +99,24 @@ export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackT
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in-up">
       <div className="flex items-center justify-between mb-6 gap-4">
-        <h1 className="text-2xl font-semibold">Track Order</h1>
+        <h1 className="text-2xl font-semibold">{t('trackOrderTitle')}</h1>
         <Button variant="outline" size="sm" onClick={onBackToProducts}>
-          Back to products
+          {t('backToProducts')}
         </Button>
       </div>
 
       <form onSubmit={handleTrack} className="max-w-xl space-y-3 mb-6">
         <label className="block text-sm text-gray-700">
-          Enter your order reference (you can paste the full ID or part of it):
+          {t('trackOrderInputLabel')}
         </label>
         <div className="flex flex-col sm:flex-row gap-3">
           <Input
             value={reference}
             onChange={(e) => setReference(e.target.value)}
-            placeholder="e.g. 123e4567 or full order ID"
+            placeholder={t('trackOrderPlaceholder')}
           />
           <Button type="submit" disabled={!reference.trim() || loading}>
-            {loading ? 'Searching…' : 'Track order'}
+            {loading ? t('searchingLabel') : t('trackOrderBtn')}
           </Button>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -134,7 +136,7 @@ export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackT
                 )}
               </div>
               <p className="text-sm text-gray-600">
-                Placed on{' '}
+                {t('placedOnLabel')}{' '}
                 {new Date(foundOrder.createdAt).toLocaleDateString('en-US', {
                   year: 'numeric',
                   month: 'long',
@@ -153,7 +155,7 @@ export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackT
           {/* Status timeline */}
           <div className="mb-4 flex flex-col gap-1">
             <div className="flex items-center justify-between text-[11px] text-gray-600 mb-1">
-              <span>Order progress</span>
+              <span>{t('orderProgressLabel')}</span>
               <span className="capitalize">{foundOrder.status}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -192,7 +194,7 @@ export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackT
           </div>
 
           <div className="border-t border-gray-200 pt-4 mb-4">
-            <p className="text-sm text-gray-600 mb-2">Items:</p>
+            <p className="text-sm text-gray-600 mb-2">{t('itemsLabel')}</p>
             <div className="space-y-2">
               {foundOrder.items.map((item, index) => (
                 <div key={index} className="flex justify-between text-sm">
@@ -208,7 +210,7 @@ export const BuyerTrackOrder: FC<BuyerTrackOrderProps> = ({ accessToken, onBackT
           </div>
 
           <div className="border-t border-gray-200 pt-4">
-            <p className="text-sm text-gray-600 mb-1">Shipping Address:</p>
+            <p className="text-sm text-gray-600 mb-1">{t('shippingAddressLabel')}</p>
             <p className="text-sm text-gray-900">{foundOrder.shippingInfo.name}</p>
             <p className="text-sm text-gray-600">{foundOrder.shippingInfo.address}</p>
             <p className="text-sm text-gray-600">
