@@ -706,14 +706,14 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
   /* ──────────────────── sidebar nav ──────────────────── */
   const navItems: { id: AdminSection; label: string; icon: React.ElementType; badge?: number }[] = [
-    { id: 'dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
-    { id: 'orders',     label: 'Orders',     icon: ShoppingBag,    badge: allOrders.filter(o=>o.status==='processing').length || undefined },
-    { id: 'users',      label: 'Customers',  icon: Users },
-    { id: 'revenue',    label: 'Revenue',    icon: DollarSign },
-    { id: 'complaints', label: 'Complaints', icon: MessageSquare,  badge: complaints.filter(c=>c.status==='open').length || undefined },
-    { id: 'messages',       label: 'Messages',      icon: Megaphone, badge: adminUnreadCount || undefined },
-    { id: 'cart-retention', label: 'Cart Recovery',  icon: ShoppingCart },
-    { id: 'settings',       label: 'Settings',       icon: Settings },
+    { id: 'dashboard',      label: t('adminNav_dashboard'),    icon: LayoutDashboard },
+    { id: 'orders',         label: t('adminNav_orders'),       icon: ShoppingBag,   badge: allOrders.filter(o=>o.status==='processing').length || undefined },
+    { id: 'users',          label: t('adminNav_customers'),    icon: Users },
+    { id: 'revenue',        label: t('adminNav_revenue'),      icon: DollarSign },
+    { id: 'complaints',     label: t('adminNav_complaints'),   icon: MessageSquare, badge: complaints.filter(c=>c.status==='open').length || undefined },
+    { id: 'messages',       label: t('adminNav_messages'),     icon: Megaphone,     badge: adminUnreadCount || undefined },
+    { id: 'cart-retention', label: t('adminNav_cartRecovery'), icon: ShoppingCart },
+    { id: 'settings',       label: t('adminNav_settings'),     icon: Settings },
   ];
 
   /* ──────────────────── render sections ──────────────────── */
@@ -721,10 +721,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   const renderDashboard = () => {
     const recentOrders = allOrders.slice(0, 6);
     const kpis = [
-      { label: 'Total Revenue (20%)', value: fmt(totalRevenue), icon: DollarSign, color: 'from-emerald-500 to-green-600', sub: `GMV ${fmt(totalGMV)}` },
-      { label: 'Total Orders',        value: allOrders.length,  icon: ShoppingBag, color: 'from-blue-500 to-blue-600',   sub: `${paidOrders.length} paid` },
-      { label: 'Registered Users',    value: users.length,      icon: Users,       color: 'from-violet-500 to-purple-600', sub: `${users.filter(u=>u.role==='seller').length} sellers` },
-      { label: 'Active Sellers',      value: sellerIds.size,    icon: Store,       color: 'from-orange-500 to-amber-600', sub: 'with orders' },
+      { label: t('adminStat_totalRevenue'),    value: fmt(totalRevenue), icon: DollarSign, color: 'from-emerald-500 to-green-600', sub: `GMV ${fmt(totalGMV)}` },
+      { label: t('adminStat_totalOrders'),     value: allOrders.length,  icon: ShoppingBag, color: 'from-blue-500 to-blue-600',   sub: `${paidOrders.length} ${t('adminStat_paid')}` },
+      { label: t('adminStat_registeredUsers'), value: users.length,      icon: Users,       color: 'from-violet-500 to-purple-600', sub: `${users.filter(u=>u.role==='seller').length} ${t('adminStat_sellers')}` },
+      { label: t('adminStat_activeSellers'),   value: sellerIds.size,    icon: Store,       color: 'from-orange-500 to-amber-600', sub: t('adminStat_withOrders') },
     ];
 
     return (
@@ -749,9 +749,9 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           <div className="lg:col-span-2">
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b">
-                <h3 className="font-semibold text-gray-900">Recent Orders</h3>
+                <h3 className="font-semibold text-gray-900">{t('adminStat_recentOrders')}</h3>
                 <button onClick={() => handleSetSection('orders')} className="text-xs text-blue-600 hover:underline">
-                  View all →
+                  {t('adminStat_viewAll')}
                 </button>
               </div>
               {loadingOrders ? (
@@ -783,13 +783,13 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           {/* Revenue breakdown */}
           <Card className="overflow-hidden">
             <div className="px-5 py-4 border-b">
-              <h3 className="font-semibold text-gray-900">Revenue Split</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Platform 20% / Sellers 80%</p>
+              <h3 className="font-semibold text-gray-900">{t('adminStat_revenueSplit')}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{t('adminStat_revenueSplitSub')}</p>
             </div>
             <div className="p-5 space-y-4">
               {[
-                { label: 'Platform (20%)', value: totalRevenue, color: 'bg-emerald-500', pct: 20 },
-                { label: 'Sellers (80%)',  value: totalGMV - totalRevenue, color: 'bg-blue-500', pct: 80 },
+                { label: t('adminStat_platform'),    value: totalRevenue,             color: 'bg-emerald-500', pct: 20 },
+                { label: t('adminStat_sellerShare'),  value: totalGMV - totalRevenue,  color: 'bg-blue-500',    pct: 80 },
               ].map(({ label, value, color, pct }) => (
                 <div key={label}>
                   <div className="flex justify-between text-xs mb-1">
@@ -803,7 +803,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
               ))}
               <div className="pt-2 border-t text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Gross Merchandise Value</span>
+                  <span className="text-gray-500">{t('adminStat_gmv')}</span>
                   <span className="font-bold text-gray-900">{fmt(totalGMV)}</span>
                 </div>
               </div>
@@ -814,10 +814,10 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
         {/* Quick stats row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: 'Pending',    count: allOrders.filter(o=>o.status==='pending').length,    color: 'text-yellow-600' },
-            { label: 'Processing', count: allOrders.filter(o=>o.status==='processing').length, color: 'text-blue-600' },
-            { label: 'Shipped',    count: allOrders.filter(o=>o.status==='shipped').length,    color: 'text-purple-600' },
-            { label: 'Delivered',  count: allOrders.filter(o=>o.status==='delivered').length,  color: 'text-green-600' },
+            { label: t('statusPending'),    count: allOrders.filter(o=>o.status==='pending').length,    color: 'text-yellow-600' },
+            { label: t('statusProcessing'), count: allOrders.filter(o=>o.status==='processing').length, color: 'text-blue-600' },
+            { label: t('statusShipped'),    count: allOrders.filter(o=>o.status==='shipped').length,    color: 'text-purple-600' },
+            { label: t('statusDelivered'),  count: allOrders.filter(o=>o.status==='delivered').length,  color: 'text-green-600' },
           ].map(({ label, count, color }) => (
             <Card key={label} className="p-4 text-center cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => { setOrderFilter(label.toLowerCase()); handleSetSection('orders'); }}>
@@ -2686,7 +2686,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           </button>
           <div className="flex-1">
             <h1 className="text-base font-semibold text-gray-900">
-              {section === 'profile' ? 'Profile Settings' : navItems.find(n => n.id === section)?.label}
+              {section === 'profile' ? t('adminNav_profileSettings') : navItems.find(n => n.id === section)?.label}
             </h1>
           </div>
           <div className="flex items-center gap-3">
