@@ -486,7 +486,6 @@ const messages: Record<Language, Record<string, string>> = {
     editProductTitle: 'Edit Product',
     editProductDesc: 'Update the details for this product.',
     savingLabel: 'Saving...',
-    saveChangesBtn: 'Save Changes',
     // BuyerInbox
     inboxTitle: 'Inbox',
     inboxSubtitle: 'Messages from ShopHub admin and sellers',
@@ -877,7 +876,6 @@ const messages: Record<Language, Record<string, string>> = {
     editProductTitle: 'Modifier le produit',
     editProductDesc: 'Mettez à jour les détails de ce produit.',
     savingLabel: 'Enregistrement...',
-    saveChangesBtn: 'Enregistrer les modifications',
     // BuyerInbox
     inboxTitle: 'Boîte de réception',
     inboxSubtitle: 'Messages des administrateurs et vendeurs ShopHub',
@@ -1268,7 +1266,6 @@ const messages: Record<Language, Record<string, string>> = {
     editProductTitle: 'تعديل المنتج',
     editProductDesc: 'قم بتحديث تفاصيل هذا المنتج.',
     savingLabel: 'جارٍ الحفظ...',
-    saveChangesBtn: 'حفظ التغييرات',
     // BuyerInbox
     inboxTitle: 'صندوق الوارد',
     inboxSubtitle: 'رسائل من إدارة ShopHub والبائعين',
@@ -1652,7 +1649,6 @@ const messages: Record<Language, Record<string, string>> = {
     editProductTitle: '编辑商品',
     editProductDesc: '更新此商品的详情。',
     savingLabel: '保存中...',
-    saveChangesBtn: '保存更改',
     // BuyerInbox
     inboxTitle: '收件箱',
     inboxSubtitle: '来自 ShopHub 管理员和卖家的消息',
