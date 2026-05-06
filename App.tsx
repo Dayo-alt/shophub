@@ -280,8 +280,6 @@ export interface Order {
 type View = 'home' | 'about' | 'login' | 'signup' | 'otp' | 'dashboard' | 'adminLogin' | 'admin';
 type OtpReason = 'signup' | 'login' | 'google';
 
-const EDGE_URL = 'https://azelpjscwzkwioxoquft.supabase.co/functions/v1/server';
-
 function App() {
   const [currentView, setCurrentView] = useState<View>('home');
   const [user, setUser] = useState<User | null>(null);
@@ -360,21 +358,20 @@ function App() {
           : null;
 
         if (googlePending === '1') {
-          // Google OAuth just completed — require OTP before entering the app
+          // Google OAuth just completed — sign out and send OTP before entering app
           window.localStorage.removeItem(GOOGLE_OTP_FLAG);
-          const res = await fetch(`${EDGE_URL}/login-otp-send`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
+          const email = session.user.email!;
+          await supabase.auth.signOut();
+          const { error: otpErr } = await supabase.auth.signInWithOtp({
+            email,
+            options: { shouldCreateUser: false },
           });
-          if (res.ok) {
-            setOtpChallenge({ email: session.user.email!, reason: 'google' });
+          if (!otpErr) {
+            setOtpChallenge({ email, reason: 'google' });
             setCurrentView('otp');
             return;
           }
-          // If OTP send fails, fall through to normal login
+          // OTP send failed — log in normally without 2FA
         }
 
         await fetchUserProfile(session.user.id, session.access_token ?? null);
@@ -436,27 +433,12 @@ function App() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    // Step 1: verify credentials — keeps session active
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // Verify credentials first — throws if wrong password/email
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message || 'Invalid email or password');
-    if (!data.session) throw new Error('Login failed — please try again');
-
-    // Step 2: send our own 6-digit code via Resend (edge function)
-    const res = await fetch(`${EDGE_URL}/login-otp-send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${data.session.access_token}`,
-      },
-    });
-    if (!res.ok) {
-      const result = await res.json().catch(() => ({}));
-      await supabase.auth.signOut();
-      throw new Error(result.error || 'Failed to send verification code');
-    }
-
-    setOtpChallenge({ email, reason: 'login' });
-    setCurrentView('otp');
+    // Clear the password session, then send Supabase OTP to the user's email
+    await supabase.auth.signOut();
+    await startOtpChallenge(email, 'login');
   };
 
   const handleSignup = async (email: string, password: string, name: string, role: 'buyer' | 'seller', country?: string, phone?: string) => {
@@ -565,85 +547,41 @@ function App() {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
 
-    if (reason === 'login' || reason === 'google') {
-      // Session is still active — just verify our custom code
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Session expired. Please log in again.');
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'email',
+    });
+    if (error) throw error;
+    const session = data.session;
+    if (!session?.user) throw new Error('Invalid or expired code');
 
-      const res = await fetch(`${EDGE_URL}/login-otp-verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ code }),
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok || !result.valid) {
-        throw new Error(result.error || 'Invalid or expired code');
-      }
+    if (typeof window !== 'undefined') window.localStorage.removeItem(GOOGLE_OTP_FLAG);
 
-      const loggedInUser = await fetchUserProfile(session.user.id, session.access_token);
-      if (loggedInUser) {
-        await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login').catch(() => {});
-      }
-    } else {
-      // signup / google: use Supabase verifyOtp
-      const { data, error } = await supabase.auth.verifyOtp({
+    if (reason === 'signup' && pendingSignup) {
+      const { name, role, country, phone } = pendingSignup;
+      await supabase.from('profiles').insert({
+        id: session.user.id,
         email,
-        token: code,
-        type: 'email',
+        name,
+        role,
+        country: country || null,
+        phone: phone || null,
       });
-      if (error) throw error;
-      const session = data.session;
-      if (!session?.user) throw new Error('Invalid or expired code');
-
-      if (typeof window !== 'undefined') window.localStorage.removeItem(GOOGLE_OTP_FLAG);
-
-      if (pendingSignup) {
-        const { name, role, country, phone } = pendingSignup;
-        await supabase.from('profiles').insert({
-          id: session.user.id,
-          email,
-          name,
-          role,
-          country: country || null,
-          phone: phone || null,
-        });
-        setPendingSignup(null);
-      }
-
-      const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
-      if (loggedInUser) {
-        await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login').catch(() => {});
-      }
+      setPendingSignup(null);
     }
 
+    const loggedInUser = await fetchUserProfile(session.user.id, session.access_token ?? null);
+    if (loggedInUser) {
+      await recordLoginEvent(loggedInUser.id, loggedInUser.role ?? null, 'login').catch(() => {});
+    }
     setOtpChallenge(null);
   };
 
   const handleResendOtp = async () => {
     if (!otpChallenge) throw new Error('No OTP challenge in progress');
     const { email, reason } = otpChallenge;
-
-    if (reason === 'login' || reason === 'google') {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Session expired. Please log in again.');
-
-      const res = await fetch(`${EDGE_URL}/login-otp-send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-      if (!res.ok) {
-        const result = await res.json().catch(() => ({}));
-        throw new Error(result.error || 'Failed to resend code');
-      }
-    } else {
-      await startOtpChallenge(email, reason);
-    }
+    await startOtpChallenge(email, reason);
   };
 
   const handleCancelOtp = async () => {
