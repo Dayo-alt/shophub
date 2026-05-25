@@ -3,6 +3,8 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import { User, Product } from '../../App';
 import { supabase } from '../../utils/supabase/client';
 import { toast } from 'sonner';
+import { saveCartToSupabase, loadCartFromSupabase, applyDiscountSession, ProductDiscount, getProductDiscount } from '../../utils/supabase/cartService';
+import { ExitIntentPopup } from '../ExitIntentPopup';
 import { BuyerHeader } from './BuyerHeader';
 import { ProductsView } from './ProductsView';
 import { BuyerCart } from './BuyerCart';
@@ -173,9 +175,11 @@ interface BuyerDashboardProps {
   user: User;
   accessToken: string;
   onLogout: () => void;
+  showExitPopup: boolean;
+  setShowExitPopup: (show: boolean) => void;
 }
 
-export function BuyerDashboard({ user, accessToken, onLogout }: BuyerDashboardProps) {
+export function BuyerDashboard({ user, accessToken, onLogout, showExitPopup, setShowExitPopup }: BuyerDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLanguage();
@@ -185,6 +189,56 @@ export function BuyerDashboard({ user, accessToken, onLogout }: BuyerDashboardPr
   const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
   const [pendingRating, setPendingRating] = useState<RatingOrder | null>(null);
   const [inboxToast, setInboxToast] = useState<ToastMsg | null>(null);
+  const [activeDiscounts, setActiveDiscounts] = useState<Map<string, ProductDiscount>>(new Map());
+
+  // Load cart from Supabase on component mount
+  useEffect(() => {
+    const loadCart = async () => {
+      try {
+        const savedCart = await loadCartFromSupabase();
+        if (savedCart && savedCart.length > 0) {
+          setCart(savedCart);
+        }
+      } catch (error) {
+        console.error('Error loading cart:', error);
+      }
+    };
+    loadCart();
+  }, []);
+
+  // Save cart to Supabase whenever it changes
+  useEffect(() => {
+    if (cart.length > 0 || (cart.length === 0 && localStorage.getItem('cart_saved'))) {
+      saveCartToSupabase(cart, user.id);
+      localStorage.setItem('cart_saved', 'true');
+    }
+  }, [cart, user.id]);
+
+  // Handle exit popup - apply discount when user goes to cart
+  const handleExitPopupGoToCart = async (discounts: Map<string, ProductDiscount>) => {
+    try {
+      // Apply discount sessions for each discounted product in cart
+      for (const [productId, discount] of discounts.entries()) {
+        const timeRemaining = Math.ceil(
+          (new Date(discount.active_end_time).getTime() - Date.now()) / (1000 * 60)
+        );
+        await applyDiscountSession(
+          discount.id,
+          productId,
+          user.id,
+          false,
+          Math.max(1, timeRemaining)
+        );
+      }
+      setActiveDiscounts(discounts);
+      // Navigate to cart page
+      navigate('/buyer/cart');
+    } catch (error) {
+      console.error('Error applying discounts:', error);
+      // Still navigate to cart even if discount application fails
+      navigate('/buyer/cart');
+    }
+  };
 
   // Realtime: watch for orders becoming 'delivered' and prompt rating
   useEffect(() => {
@@ -404,6 +458,12 @@ export function BuyerDashboard({ user, accessToken, onLogout }: BuyerDashboardPr
           t={t}
         />
       )}
+      <ExitIntentPopup
+        isOpen={showExitPopup}
+        cart={cart}
+        onClose={() => setShowExitPopup(false)}
+        onGoToCart={handleExitPopupGoToCart}
+      />
       <BuyerHeader
         user={user}
         cartItemCount={cartItemCount}
@@ -446,6 +506,7 @@ export function BuyerDashboard({ user, accessToken, onLogout }: BuyerDashboardPr
                 onRemove={removeFromCart}
                 onContinueShopping={() => navigate('/buyer')}
                 onCheckout={() => navigate('/buyer/checkout')}
+                activeDiscounts={activeDiscounts}
               />
             }
           />

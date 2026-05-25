@@ -1,8 +1,9 @@
-import { Trash2, ShoppingBag } from 'lucide-react';
+import { Trash2, ShoppingBag, Tag } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { useLanguage } from '../../utils/i18n/LanguageContext';
+import { ProductDiscount } from '../../utils/supabase/cartService';
 
 interface BuyerCartProps {
   cart: any[];
@@ -10,11 +11,27 @@ interface BuyerCartProps {
   onRemove: (productId: string) => void;
   onContinueShopping: () => void;
   onCheckout: () => void;
+  activeDiscounts?: Map<string, ProductDiscount>;
 }
 
-export function BuyerCart({ cart, onUpdateQuantity, onRemove, onContinueShopping, onCheckout }: BuyerCartProps) {
-  const { t } = useLanguage();
-  const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+export function BuyerCart({ cart, onUpdateQuantity, onRemove, onContinueShopping, onCheckout, activeDiscounts }: BuyerCartProps) {
+  const { t, currencySymbol = '$' } = useLanguage();
+  
+  // Calculate prices with discounts applied
+  const getDiscountedPrice = (productId: string, originalPrice: number) => {
+    const discount = activeDiscounts?.get(productId);
+    return discount ? discount.discount_price : originalPrice;
+  };
+  
+  const subtotal = cart.reduce((sum, item) => {
+    const price = getDiscountedPrice(item.product.id, item.product.price);
+    return sum + price * item.quantity;
+  }, 0);
+  
+  // Calculate total savings
+  const originalSubtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const totalDiscount = originalSubtotal - subtotal;
+  
   const shipping = subtotal > 50 ? 0 : 9.99;
   const tax = subtotal * 0.08;
   const total = subtotal + shipping + tax;
@@ -131,8 +148,19 @@ export function BuyerCart({ cart, onUpdateQuantity, onRemove, onContinueShopping
                       )}
                     </div>
 
-                    <span className="text-gray-900">
-                      ${(item.product.price * item.quantity).toFixed(2)}
+                    <span className="text-gray-900 flex items-center gap-2">
+                      {activeDiscounts?.has(item.product.id) && (
+                        <>
+                          <span className="line-through text-gray-500 text-sm">
+                            {currencySymbol}{(item.product.price * item.quantity).toFixed(2)}
+                          </span>
+                          <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-semibold flex items-center gap-1">
+                            <Tag className="size-3" />
+                            {activeDiscounts.get(item.product.id)?.discount_percent?.toFixed(0)}% OFF
+                          </span>
+                        </>
+                      )}
+                      <span>{currencySymbol}{(getDiscountedPrice(item.product.id, item.product.price) * item.quantity).toFixed(2)}</span>
                     </span>
                   </div>
                 </div>
@@ -148,21 +176,30 @@ export function BuyerCart({ cart, onUpdateQuantity, onRemove, onContinueShopping
             <div className="space-y-3 mb-4 pb-4 border-b border-gray-200">
               <div className="flex justify-between text-gray-600">
                 <span>{t('subtotal') || 'Subtotal'}</span>
-                <span>${subtotal.toFixed(2)}</span>
+                <span>{currencySymbol}{subtotal.toFixed(2)}</span>
               </div>
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-green-600 font-semibold bg-green-50 -mx-2 px-2 py-1 rounded">
+                  <span className="flex items-center gap-1">
+                    <Tag className="size-4" />
+                    {t('youSave') || 'You Save'}
+                  </span>
+                  <span>-{currencySymbol}{totalDiscount.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-600">
                 <span>{t('shipping') || 'Shipping'}</span>
-                <span>{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
+                <span>{shipping === 0 ? 'FREE' : `${currencySymbol}${shipping.toFixed(2)}`}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>{t('taxWithRate') || 'Tax (8%)'}</span>
-                <span>${tax.toFixed(2)}</span>
+                <span>{currencySymbol}{tax.toFixed(2)}</span>
               </div>
             </div>
 
             <div className="flex justify-between mb-6">
               <span className="text-gray-900">{t('total') || 'Total'}</span>
-              <span className="text-gray-900">${total.toFixed(2)}</span>
+              <span className="text-gray-900">{currencySymbol}{total.toFixed(2)}</span>
             </div>
 
             {shipping > 0 && (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Loader2, Store, Star } from 'lucide-react';
+import { Plus, Edit, Trash2, Loader2, Store, Star, Tag } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -7,6 +7,8 @@ import { supabase } from '../../utils/supabase/client';
 import { Product } from '../../App';
 import { AddProductDialog } from './AddProductDialog';
 import { EditProductDialog } from './EditProductDialog';
+import { DiscountDialog } from './DiscountDialog';
+import { getSellerActiveDiscounts, ProductDiscount } from '../../utils/supabase/cartService';
 // Removed invalid ImageWithFallback import; using native img with fallback
 import { useLanguage } from '../../utils/i18n/LanguageContext';
 
@@ -19,6 +21,8 @@ export function SellerProducts({ accessToken }: SellerProductsProps) {
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [discountingProduct, setDiscountingProduct] = useState<Product | null>(null);
+  const [discountsByProduct, setDiscountsByProduct] = useState<Record<string, ProductDiscount | null>>({});
   const [reviewsByProduct, setReviewsByProduct] = useState<Record<string, Array<{ id: string; product_id: string; user_email: string | null; user_id?: string | null; user_name?: string | null; rating: number; comment: string; created_at: string }>>>({});
   const { t, formatCurrency, currencyCode, currencySymbol } = useLanguage();
 
@@ -45,6 +49,17 @@ export function SellerProducts({ accessToken }: SellerProductsProps) {
         currencyCode: p.currency_code ?? p.currencyCode ?? 'NGN',
       }));
       setProducts(list);
+      
+      // Load discounts for this seller
+      if (sellerId) {
+        const activeDiscounts = await getSellerActiveDiscounts(sellerId);
+        const discountMap: Record<string, ProductDiscount | null> = {};
+        activeDiscounts.forEach(discount => {
+          discountMap[discount.product_id] = discount;
+        });
+        setDiscountsByProduct(discountMap);
+      }
+      
       const ids = list.map(p => p.id);
       if (ids.length) {
         const { data: revs } = await supabase
@@ -257,7 +272,16 @@ export function SellerProducts({ accessToken }: SellerProductsProps) {
                     );
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-2"
+                    onClick={() => setDiscountingProduct(product)}
+                  >
+                    <Tag className="size-4" />
+                    {discountsByProduct[product.id] ? t('editDiscount') || 'Edit Discount' : t('setDiscount') || 'Set Discount'}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -277,6 +301,19 @@ export function SellerProducts({ accessToken }: SellerProductsProps) {
                     {t('delete')}
                   </Button>
                 </div>
+                
+                {discountsByProduct[product.id] && (
+                  <div className="mt-3 p-2 bg-orange-50 rounded border border-orange-200 text-xs">
+                    <div className="flex items-center gap-1 text-orange-700 font-semibold">
+                      <Tag className="size-3" />
+                      {discountsByProduct[product.id]?.discount_percent?.toFixed(0)}% OFF
+                    </div>
+                    <div className="text-orange-600 text-xs mt-1">
+                      {formatCurrency(discountsByProduct[product.id]?.discount_price || 0, product.currencyCode)}
+                      {' '}<span className="line-through text-orange-500">{formatCurrency(discountsByProduct[product.id]?.original_price || 0, product.currencyCode)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
           );})}
@@ -296,6 +333,19 @@ export function SellerProducts({ accessToken }: SellerProductsProps) {
           product={editingProduct}
           onClose={() => setEditingProduct(null)}
           onUpdate={handleUpdateProduct}
+          currencySymbol={currencySymbol}
+        />
+      )}
+
+      {discountingProduct && (
+        <DiscountDialog
+          product={discountingProduct}
+          existingDiscount={discountsByProduct[discountingProduct.id] || null}
+          onClose={() => setDiscountingProduct(null)}
+          onSuccess={() => {
+            setDiscountingProduct(null);
+            fetchProducts();
+          }}
           currencySymbol={currencySymbol}
         />
       )}

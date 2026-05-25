@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './utils/supabase/client';
+import { ExitIntentDetector } from './components/ExitIntentDetector';
 import { LoginPage } from './components/auth/LoginPage';
 import { SignupPage } from './components/auth/SignupPage';
 import { OtpPage } from './components/auth/OtpPage';
@@ -27,7 +28,7 @@ function AppContent({
   handleLogin, handleLogout, handleSignup, handleVerifyOtp, handleCancelOtp, 
   handleResendOtp, handleAdminEmailLogin, handleAdminGoogleLogin, handleUserGoogleLogin,
   pendingRoleUser, setPendingRoleUser, otpChallenge, setOtpChallenge, startOtpChallenge,
-  showAdminLink, hideFooter, t, recordLoginEvent
+  showAdminLink, hideFooter, t, recordLoginEvent, showExitPopup, setShowExitPopup, onExitIntent
 }: any) {
   const location = useLocation();
   const isLoggedIn = !!user && !!accessToken;
@@ -176,6 +177,8 @@ function AppContent({
               user={user}
               accessToken={accessToken}
               onLogout={handleLogout}
+              showExitPopup={showExitPopup}
+              setShowExitPopup={setShowExitPopup}
             />
           ) : (
             <SellerDashboard
@@ -295,6 +298,7 @@ function App() {
     email: string;
     reason: OtpReason;
   } | null>(null);
+  const [showExitPopup, setShowExitPopup] = useState(false);
   const [pendingSignup, setPendingSignup] = useState<{
     name: string;
     role: 'buyer' | 'seller';
@@ -662,8 +666,13 @@ function App() {
   // Routes that should show standalone without view-based content
   const routePaths = ['/reset-password', '/reset-password-confirm', '/buyer/track-order', '/seller/orders', '/admin/revenue'];
   
+  const handleExitIntent = () => {
+    setShowExitPopup(true);
+  };
+
   return (
     <BrowserRouter>
+      <ExitIntentDetector onExitIntent={handleExitIntent} />
       <AppContent 
         isLoggedIn={isLoggedIn}
         user={user}
@@ -690,6 +699,9 @@ function App() {
         hideFooter={hideFooter}
         t={t}
         recordLoginEvent={recordLoginEvent}
+        showExitPopup={showExitPopup}
+        setShowExitPopup={setShowExitPopup}
+        onExitIntent={handleExitIntent}
       />
     </BrowserRouter>
   );
