@@ -54,3 +54,4 @@ With the dependencies installed and database environment keys successfully confi
   npm run dev
 ```
 Once the build compiles successfully, open your web browser and navigate to `http://localhost:5173` to view, test, and interact with the live application interface.
+(patch)
