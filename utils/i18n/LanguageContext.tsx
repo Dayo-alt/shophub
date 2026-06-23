@@ -10,6 +10,27 @@ export const ARAB_COUNTRIES = new Set([
   'Sudan', 'Mauritania', 'Somalia', 'Comoros', 'Djibouti',
 ]);
 
+// Countries that auto-switch to Spanish
+export const SPANISH_COUNTRIES = new Set([
+  'Spain', 'Mexico', 'Argentina', 'Colombia', 'Chile', 'Peru',
+  'Venezuela', 'Ecuador', 'Bolivia', 'Paraguay', 'Uruguay',
+  'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua', 'Costa Rica',
+  'Panama', 'Puerto Rico',
+]);
+
+// Countries that auto-switch to Chinese
+export const CHINESE_COUNTRIES = new Set([
+  'China', 'Taiwan', 'Singapore',
+]);
+
+// Countries that auto-switch to French
+export const FRENCH_COUNTRIES = new Set([
+  'France', 'Belgium', 'Switzerland', 'Canada',
+  'Cameroon', 'Ivory Coast', 'Senegal', 'Mali', 'Burkina Faso',
+  'Benin', 'Togo', 'Congo (DRC)', 'Rwanda', 'Mauritius',
+  'Haiti', 'Luxembourg', 'Monaco',
+]);
+
 // Currency formatting config per language (fallback)
 const CURRENCY_CONFIG: Record<Language, { symbol: string; locale: string; code: string }> = {
   en: { symbol: '₦', locale: 'en-NG', code: 'NGN' },
@@ -1815,9 +1836,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setCountry = (c: string) => {
     setCountryState(c);
     if (typeof window !== 'undefined') window.localStorage.setItem('country', c);
-    // Auto-switch to Arabic for Arab countries
+    // Auto-switch based on country (Spanish countries use English as fallback for now)
     if (ARAB_COUNTRIES.has(c)) {
       setLanguage('ar');
+    } else if (CHINESE_COUNTRIES.has(c)) {
+      setLanguage('zh');
+    } else if (FRENCH_COUNTRIES.has(c)) {
+      setLanguage('fr');
     }
   };
 

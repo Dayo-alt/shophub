@@ -224,6 +224,7 @@ export interface User {
   email: string;
   name: string;
   role: 'buyer' | 'seller' | 'admin';
+  phone?: string;
 }
 
 export interface Product {
@@ -397,11 +398,12 @@ function App() {
       const { data: authUser } = await supabase.auth.getUser();
       const email = authUser.user?.email || '';
       const nameFromProfile = (data as any)?.name as string | undefined;
+      const phoneFromProfile = (data as any)?.phone as string | undefined;
       const roleFromProfile = (data as any)?.role as 'buyer' | 'seller' | null | undefined;
 
       const ADMIN_EMAIL = 'mtudayo@gmail.com';
       if (email === ADMIN_EMAIL) {
-        const adminUser: User = { id: userId, email, name: nameFromProfile ?? email, role: 'buyer' };
+        const adminUser: User = { id: userId, email, name: nameFromProfile ?? email, role: 'buyer', phone: phoneFromProfile };
         setUser(adminUser);
         if (token) setAccessToken(token);
         setIsAdmin(true);
@@ -413,7 +415,7 @@ function App() {
       if (error || !data || !roleFromProfile) {
         const name = nameFromProfile ?? email;
         setPendingRoleUser({ id: userId, email, name });
-        setUser({ id: userId, email, name, role: 'buyer' }); // temporary until they choose
+        setUser({ id: userId, email, name, role: 'buyer', phone: phoneFromProfile }); // temporary until they choose
         if (token) setAccessToken(token);
         setCurrentView('home');
         return;
@@ -424,6 +426,7 @@ function App() {
         email,
         name: nameFromProfile ?? email,
         role: roleFromProfile,
+        phone: phoneFromProfile,
       };
 
       setUser(mapped);

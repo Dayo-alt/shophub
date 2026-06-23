@@ -14,7 +14,7 @@ import {
 import { supabase } from '../../utils/supabase/client';
 
 interface BuyerHeaderProps {
-  user: { name: string; email: string };
+  user: { name: string; email: string; phone?: string };
   cartItemCount: number;
   onNavigatePath: (path: string) => void;
   currentPath: string;
@@ -72,11 +72,11 @@ export function BuyerHeader({ user, cartItemCount, onNavigatePath, currentPath, 
     currentPath === '/buyer/returns';
 
   const supportLabel = (() => {
-    if (currentPath === '/buyer/help-center') return 'Help Center';
+    if (currentPath === '/buyer/help-center') return t('helpCenterTab');
     if (currentPath === '/buyer/orders') return t('orders');
-    if (currentPath === '/buyer/track-order') return 'Track Order';
-    if (currentPath === '/buyer/returns') return 'Returns & Refunds';
-    return 'Help';
+    if (currentPath === '/buyer/track-order') return t('trackOrderTitle');
+    if (currentPath === '/buyer/returns') return t('returnsRefundsTitle');
+    return t('helpCenterTitle');
   })();
 
   return (
@@ -150,6 +150,7 @@ export function BuyerHeader({ user, cartItemCount, onNavigatePath, currentPath, 
                 <DropdownMenuLabel>{t('myAccount')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="px-2 py-2 text-sm text-gray-600">{user.email}</div>
+                {user.phone && <div className="px-2 pb-2 text-sm text-gray-500">{user.phone}</div>}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => onNavigatePath('/buyer/account')}>
                   <User className="size-4 mr-2" />
