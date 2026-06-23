@@ -1711,16 +1711,17 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
     try {
       const { error } = await supabase
         .from('cart_retention_config')
-        .update({
+        .upsert({
+          id: 1,
           enabled: updated.enabled,
           intervals: updated.intervals,
           channels: updated.channels,
           templates: updated.templates,
-        })
-        .eq('id', 1);
+        }, { onConflict: 'id' });
       setSavingRetention(false);
       if (error) { alert(`Failed to save: ${error.message}\nCode: ${error.code}`); return; }
       setRetention(updated);
+      alert('Settings saved successfully!');
     } catch (e: any) {
       setSavingRetention(false);
       alert(`Failed to save: ${e?.message || String(e)}`);
