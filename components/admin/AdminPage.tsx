@@ -1708,6 +1708,7 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
 
   const saveRetention = async (updated: CartRetentionConfig) => {
     setSavingRetention(true);
+    console.log('Saving retention config:', updated);
     try {
       const { error } = await supabase
         .from('cart_retention_config')
@@ -1718,11 +1719,19 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
           channels: updated.channels,
           templates: updated.templates,
         }, { onConflict: 'id' });
+      
+      console.log('Save result:', { error });
       setSavingRetention(false);
-      if (error) { alert(`Failed to save: ${error.message}\nCode: ${error.code}`); return; }
+      
+      if (error) { 
+        console.error('Save error details:', error);
+        alert(`Failed to save: ${error.message}\nCode: ${error.code}`); 
+        return; 
+      }
       setRetention(updated);
       alert('Settings saved successfully!');
     } catch (e: any) {
+      console.error('Save exception:', e);
       setSavingRetention(false);
       alert(`Failed to save: ${e?.message || String(e)}`);
     }
