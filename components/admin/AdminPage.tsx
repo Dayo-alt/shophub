@@ -480,6 +480,14 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
       
       console.log('Fetching orders from database...');
       
+      // Try a simple count query first
+      const { count, error: countError } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true });
+      
+      console.log('Orders count query:', { count, countError });
+      
+      // Now try the full query
       const { data, error } = await supabase
         .from('orders')
         .select('*')
