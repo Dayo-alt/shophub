@@ -470,10 +470,15 @@ export function AdminPage({ onLogout, accessToken }: AdminPageProps) {
   useEffect(() => {
     const load = async () => {
       setLoadingOrders(true);
-      const { data } = await supabase
+      console.log('Fetching orders from database...');
+      const { data, error } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false });
+      
+      console.log('Orders fetch result:', { data, error });
+      console.log('Number of orders:', data?.length || 0);
+      
       setAllOrders(data || []);
       setLoadingOrders(false);
     };
