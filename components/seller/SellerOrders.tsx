@@ -87,18 +87,27 @@ export function SellerOrders({ accessToken, sellerId: sellerIdProp }: SellerOrde
       }
       if (!uid) { setLoading(false); return; }
 
+      console.log('SellerOrders: Fetching orders for seller ID:', uid);
+      
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .not('seller_earnings', 'is', null)
         .order('created_at', { ascending: false });
 
+      console.log('SellerOrders: Raw orders from DB:', { data, error });
+      console.log('SellerOrders: Number of raw orders:', data?.length || 0);
+
       if (error) throw error;
 
       const mine = (data || []).filter((o: any) => {
         const se = o.seller_earnings;
-        return se && typeof se === 'object' && uid! in se;
+        const hasSellerId = se && typeof se === 'object' && uid! in se;
+        console.log('SellerOrders: Checking order', o.id, 'seller_earnings:', se, 'has seller ID:', hasSellerId);
+        return hasSellerId;
       });
+
+      console.log('SellerOrders: Filtered orders for this seller:', mine.length);
 
       const normalised = mine.map((o: any) => ({
         id:             o.id,

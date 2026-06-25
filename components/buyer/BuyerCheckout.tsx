@@ -74,14 +74,24 @@ export function BuyerCheckout({ cart, user, accessToken, onBack, onOrderComplete
     try {
       const orderId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const trackingNumber = `TRK${Date.now().toString(36).slice(-5).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+      console.log('=== CHECKOUT DEBUG ===');
+      console.log('Cart items:', cart.map((item: any) => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        sellerId: item.product.sellerId,
+        seller_id: item.product.seller_id,
+      })));
+      
       const items = cart.map((item: any) => ({
         productId:    item.product.id,
         productName:  item.product.name,
         productImage: item.product.image,
         quantity:     item.quantity,
         price:        item.product.price,
-        sellerId:     item.product.sellerId,
+        sellerId:     item.product.sellerId || item.product.seller_id || '',
       }));
+
+      console.log('Mapped items with sellerId:', items);
 
       // Compute per-seller earnings (80%) and platform fee (20%)
       const platformFee = parseFloat((total * 0.20).toFixed(2));
@@ -94,6 +104,9 @@ export function BuyerCheckout({ cart, user, accessToken, onBack, onOrderComplete
         );
       }
 
+      console.log('Creating order with seller earnings:', sellerEarnings);
+      console.log('Order items:', items);
+      
       const { error } = await supabase.from('orders').insert({
         id:                orderId,
         buyer_id:          user.id,
@@ -110,6 +123,8 @@ export function BuyerCheckout({ cart, user, accessToken, onBack, onOrderComplete
         tracking_number:   trackingNumber,
         status_history:    [{ status: 'processing', timestamp: new Date().toISOString(), note: 'Order placed and payment confirmed.' }],
       });
+
+      console.log('Order creation result:', { error, orderId });
 
       if (error) throw new Error(error.message);
 
