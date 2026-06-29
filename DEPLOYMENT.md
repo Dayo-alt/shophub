@@ -1,5 +1,4 @@
 # Deployment Guide
-
 ## Current Status
 - ✅ Frontend built successfully
 - ✅ Backend already deployed on Supabase Cloud
