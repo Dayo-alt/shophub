@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --font-size: 14px;
+  --font-size: 15px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
